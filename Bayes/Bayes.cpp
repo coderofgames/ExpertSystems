@@ -635,7 +635,7 @@ int main(int argc, char** argv)
 				{
 					if (stim_res_output == ruleIndexes[i]->q[j].class_member)
 					{
-						rulePart1 = true;
+						ruleSet = true;
 						if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::IF)
 							break;
 					}
@@ -657,7 +657,6 @@ int main(int argc, char** argv)
 	//InputQuery input;
 	//input.q.push_back(EquivalenceRelation("machines"))
 
-	vector< int > cognition_core;
 
 
 
