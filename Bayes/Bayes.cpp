@@ -528,7 +528,7 @@ int main(int argc, char** argv)
 
 
 	}
-
+	cout << "TEST WITH ... 1) Environment is machines, 2) job is repairing 3) feedback assumed" << endl;
 	string environment_type = "machines";
 	int query_object = object_type_indexes["environment"];
 
@@ -542,16 +542,20 @@ int main(int argc, char** argv)
 		{
 			if (ruleIndexes[i]->q[j].object_class == query_object)
 			{
+				int index = -1;
 				for (int k = 0; k < (*objects[query_object]).size(); k++)
 				{
 					if (environment_type == (*objects[query_object])[k].value) 
  					{
-						ruleSet = true;
-						if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::OR)
-							break;
-						if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::IF)
-							break;
+						
+						index = k;
+						break;
 					}
+				}
+				if (index != -1)
+				{
+					if( ruleIndexes[i]->q[j].class_member == index )
+						ruleSet = true;
 				}
 			}
 			if (ruleSet) break;
@@ -559,6 +563,33 @@ int main(int argc, char** argv)
 		if (ruleSet == true)
 		{
 			stim_sit_output = ruleIndexes[i]->consequence.class_member;
+
+			cout << "**********************************************" << endl;
+			cout << "Rule " << i + 1 << endl;
+			cout << "**********************************************" << endl;
+			for (int j = 0; j < ruleIndexes[i]->q.size(); j++)
+			{
+
+				string statement = "";
+				statement += semantics[ruleIndexes[i]->q[j].logical_semantic_index];
+				statement += " ";
+				int table_index = ruleIndexes[i]->q[j].object_class;
+				int member_index = ruleIndexes[i]->q[j].class_member;
+
+				statement += (*objects[table_index])[member_index].name;
+				statement += " is ";
+				statement += (*objects[table_index])[member_index].value;
+
+				cout << statement << endl;
+			}
+			int table_index = ruleIndexes[i]->consequence.object_class;
+			int member_index = ruleIndexes[i]->consequence.class_member;
+
+			cout << "then " << (*objects[table_index])[member_index].name;
+			cout << " is " << (*objects[table_index])[member_index].value << endl;
+
+			cout << endl;
+			break;
 		}
 	}
 	
@@ -575,16 +606,19 @@ int main(int argc, char** argv)
 		{
 			if (ruleIndexes[i]->q[j].object_class == query_object)
 			{
+				int index = -1;
 				for (int k = 0; k < (*objects[query_object]).size(); k++)
 				{
 					if (job_type == (*objects[query_object])[k].value)
 					{
-						ruleSet = true;
-						if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::OR)
-							break;
-						if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::IF)
-							break;
+						index = k;
+						break;
 					}
+				}
+				if (index != -1)
+				{
+					if (ruleIndexes[i]->q[j].class_member == index)
+						ruleSet = true;
 				}
 				
 			}
@@ -593,6 +627,32 @@ int main(int argc, char** argv)
 		if (ruleSet == true)
 		{
 			stim_res_output = ruleIndexes[i]->consequence.class_member;
+			cout << "**********************************************" << endl;
+			cout << "Rule " << i + 1 << endl;
+			cout << "**********************************************" << endl;
+			for (int j = 0; j < ruleIndexes[i]->q.size(); j++)
+			{
+
+				string statement = "";
+				statement += semantics[ruleIndexes[i]->q[j].logical_semantic_index];
+				statement += " ";
+				int table_index = ruleIndexes[i]->q[j].object_class;
+				int member_index = ruleIndexes[i]->q[j].class_member;
+
+				statement += (*objects[table_index])[member_index].name;
+				statement += " is ";
+				statement += (*objects[table_index])[member_index].value;
+
+				cout << statement << endl;
+			}
+			int table_index = ruleIndexes[i]->consequence.object_class;
+			int member_index = ruleIndexes[i]->consequence.class_member;
+
+			cout << "then " << (*objects[table_index])[member_index].name;
+			cout << " is " << (*objects[table_index])[member_index].value << endl;
+
+			cout << endl;
+			break;
 		}
 	}
 
@@ -603,26 +663,28 @@ int main(int argc, char** argv)
 	
 
 	int medium_output = 0;
-
+	bool ruleSet = false;
+	bool rulePart1 = false; 
 	for (int i = 0; i < ruleIndexes.size(); i++)
 	{
-		bool ruleSet = false;
-		bool rulePart1 = false;
+
 
 		for (int j = 0; j < ruleIndexes[i]->q.size(); j++)
 		{
 			if (rulePart1 == false)
 			{
 
-			
+				int index = -1;
 				if (ruleIndexes[i]->q[j].object_class == query_object)
 				{
 					if (stim_sit_output == ruleIndexes[i]->q[j].class_member)
 						{
-							rulePart1 = true;
+							
 							query_object = object_type_indexes["StimulusResponse"];
-							if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::IF)
-								break;
+							//if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::IF)
+							//	break;
+							rulePart1 = true;
+						//	break;
 						}
 				
 				
@@ -630,33 +692,61 @@ int main(int argc, char** argv)
 			}
 			else
 			{
-				
+				int index = -1;
 				if (ruleIndexes[i]->q[j].object_class == query_object)
 				{
 					if (stim_res_output == ruleIndexes[i]->q[j].class_member)
 					{
 						ruleSet = true;
-						if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::IF)
+						//if (ruleIndexes[i]->q[j].logical_semantic_index == LOGICAL_SEMANTIC::IF)
 							break;
 					}
 
 
 				}
 			}
+			if (ruleSet == true) break;
 			
 		}
 		if (ruleSet == true)
 		{
 			medium_output = ruleIndexes[i]->consequence.class_member;
+			cout << "**********************************************" << endl;
+			cout << "Rule " << i + 1 << endl;
+			cout << "**********************************************" << endl;
+			for (int j = 0; j < ruleIndexes[i]->q.size(); j++)
+			{
+
+				string statement = "";
+				statement += semantics[ruleIndexes[i]->q[j].logical_semantic_index];
+				statement += " ";
+				int table_index = ruleIndexes[i]->q[j].object_class;
+				int member_index = ruleIndexes[i]->q[j].class_member;
+
+				statement += (*objects[table_index])[member_index].name;
+				statement += " is ";
+				statement += (*objects[table_index])[member_index].value;
+
+				cout << statement << endl;
+			}
+			int table_index = ruleIndexes[i]->consequence.object_class;
+			int member_index = ruleIndexes[i]->consequence.class_member;
+
+			cout << "then " << (*objects[table_index])[member_index].name;
+			cout << " is " << (*objects[table_index])[member_index].value << endl;
+
+			cout << endl;
+			break;
 		}
 	}
 
-	cout << "TEST WITH ... 1) Environment is machines, 2) job is repairing 3) feedback assumed" << endl;
+	
 	cout << "medium output is " << (*objects[object_type_indexes["medium"]])[medium_output].value << endl << endl;
 
 	//InputQuery input;
 	//input.q.push_back(EquivalenceRelation("machines"))
 
+	vector< int > cognition_core;
 
 
 
