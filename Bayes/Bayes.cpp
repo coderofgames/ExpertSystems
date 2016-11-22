@@ -651,7 +651,7 @@ int main(int argc, char** argv)
 		}
 	}
 
-	cout << "TEST WITH ... 1) Environment is workshop, 2) job is repairing 3) feedback assumed" << endl;
+	cout << "TEST WITH ... 1) Environment is machines, 2) job is repairing 3) feedback assumed" << endl;
 	cout << "medium output is " << (*objects[object_type_indexes["medium"]])[medium_output].value << endl << endl;
 
 	//InputQuery input;
