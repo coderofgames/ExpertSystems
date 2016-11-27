@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include "matrix_solver.h"
 
 using std::vector;
 using std::cout;
@@ -717,10 +718,620 @@ namespace EXPERT_VERSION_1
 	
 }
 
+namespace STATE_MACHINE
+{
+	namespace TEST_STATES
+	{
+		enum STATES { START_STATE, MIDDLE_STATE, END_STATE };
+		enum EVENTS { EVENT_1, EVENT_2, EVENT_3, EVENT_4, EVENT_5, EVENT_6 };
+		string string_events[6] = { "EVENT_1", "EVENT_2", "EVENT_3", "EVENT_4", "EVENT_5", "EVENT_6" };
+		int transitions[7] = { EVENT_1, EVENT_4, EVENT_2, EVENT_5, EVENT_3, EVENT_6, EVENT_2 };
+
+	};
+
+
+	
+
+	namespace LINKED_STATE_MACHINE
+	{
+		using namespace TEST_STATES;
+
+		class State;
+		class Transition;
+
+		class Signal
+		{
+		public:
+			Signal(int signal_id)
+			{
+				id = signal_id;
+			}
+			int id;
+		};
+		
+		class Transition
+		{
+		public:
+			Transition(State *From, State *To, int signal)
+			{
+				from = From;
+				to = To;
+				next = this;
+				prev = this;
+				signal_id = signal;
+			}
+
+			State* Fire_(int signal)
+			{
+				if (signal == signal_id)
+				{
+					return to;
+				}
+
+				return from;
+			}
+
+			int signal_id;
+			State *from;
+			State *to;
+			Transition *next = 0;
+			Transition *prev = 0;
+		};
+
+		class State
+		{
+		public:
+			int m_id = -1;
+			State(int id)
+			{
+				m_id = id;
+			}
+			State *Activate(Signal *c)
+			{
+				State* output = this;
+				Transition* temp = m_start;
+				while (temp)
+				{
+					output = temp->Fire_(c->id);
+					if (output != this)
+						return output;
+					temp = temp->next;
+					if (temp == m_start)
+						break;
+				}
+				return output;
+			}
+
+			Transition* AddTransition(State* p, Signal *c)
+			{
+				Transition *pNewTransition = new Transition(this, p, c->id);
+
+				if (m_start)
+				{
+					Transition *temp = m_start;
+					Transition *prev = m_start->prev;
+				
+					if (prev != temp)
+					{
+						prev->next = pNewTransition;
+						temp->prev = pNewTransition;
+						pNewTransition->next = temp;
+						pNewTransition->prev = prev;
+					}
+					else
+					{
+						temp->next = pNewTransition;
+						pNewTransition->next = temp;
+						temp->prev = pNewTransition;
+						pNewTransition->prev = temp;
+					}
+				}
+				else
+				{
+					m_start = pNewTransition;
+					
+				}
+
+				return pNewTransition;
+			}
+			
+			
+			Transition *m_start = 0;
+		};
+
+		class StateMachine
+		{
+		public:
+
+			State* ProcessEvent(Signal *evt)
+			{
+				//if (m_current_State >= 0 && m_current_State < m_states.size())
+				m_current_State = m_current_State->Activate(evt);
+
+				return m_current_State;
+			}
+			State* GetCurrentState()
+			{
+				return m_current_State;
+			}
+			void SetStartState(State* start)
+			{
+				m_current_State = start;
+			}
+
+			State* m_current_State = 0;
+			vector<State*> m_states;
+		};
+
+		void RunTest()
+		{
+			cout << endl;
+			cout << "****************************************************" << endl;
+
+			State start_state(START_STATE);
+			State middle_state(MIDDLE_STATE);
+			State end_state(END_STATE);
+
+			Signal s1(EVENT_1);
+			Signal s2(EVENT_2);
+			Signal s3(EVENT_3);
+			Signal s4(EVENT_4);
+			Signal s5(EVENT_5);
+			Signal s6(EVENT_6);
+
+			start_state.AddTransition(&middle_state, &s1);
+			start_state.AddTransition(&end_state, &s2);
+
+			middle_state.AddTransition(&end_state, &s3);
+			middle_state.AddTransition(&start_state, &s4);
+
+			end_state.AddTransition(&middle_state, &s5);
+			end_state.AddTransition(&start_state, &s6);
+
+			StateMachine m;
+			m.SetStartState(&start_state);
+
+			Signal *state_events[6] = { &s1, &s2, &s3, &s4, &s5, &s6 };
+
+
+			for (int i = 0; i < 7; i++)
+			{
+				cout << "State machine current state:   ";
+				State* st = m.GetCurrentState();
+
+				switch (STATES(st->m_id))
+				{
+				case STATES::START_STATE:
+					cout << "START_STATE" << endl;
+					break;
+				case STATES::MIDDLE_STATE:
+					cout << "MIDDLE_STATE" << endl;
+					break;
+				case STATES::END_STATE:
+					cout << "END_STATE" << endl;
+					break;
+				default:
+					break;
+				};
+				cout << "performing transition: " << string_events[transitions[i]] << endl;
+				st = m.ProcessEvent(state_events[transitions[i]]);
+				//state_machine.stateTransition(transitions[i]);
+			}
+		}
+
+	};
+
+	namespace LINKED_STATE_MACHINE_VERSION_2
+	{
+		using namespace TEST_STATES;
+
+		class BaseState;
+		class State;
+		template< class SIGNAL> class Transition;
+
+		enum SIGNAL_TYPE {BASE, FLOAT, LIST};
+
+		class Signal
+		{
+		public:
+			Signal(int signal_id)
+			{
+				id = signal_id;
+			}
+			int id;
+			int m_type = SIGNAL_TYPE::BASE;
+		};
+
+		class Float_Signal : public Signal
+		{
+		public:
+			Float_Signal(int signal_id, float value) : Signal(signal_id)
+			{
+				m_val = value;
+				m_type = SIGNAL_TYPE::FLOAT;
+			}
+			float m_val;
+		};
+
+		enum LOGICAL_OP { AND, OR, XOR, NAND };
+
+		class LinkedSignal : public Float_Signal
+		{
+		public:
+			LinkedSignal(int signal_id, float value) : Float_Signal(signal_id, value)
+			{
+				m_type = SIGNAL_TYPE::LIST;
+			}
+			void AddSignal(LinkedSignal* s)
+			{
+				if (p_next == this)
+				{
+					p_next = s;
+					s->p_prev = this;
+					this->p_prev = s;
+					s->p_next = this;
+				}
+				else
+				{
+					p_prev->p_next = s;
+					s->p_prev = p_prev;
+					p_prev = s;
+					s->p_next = this;
+				}
+			}
+
+			bool Evaluate(LOGICAL_OP op)
+			{
+				switch (op)
+				{
+				case AND:
+				{
+					LinkedSignal *temp = this;
+					if (temp == p_next)
+					{
+						return temp->m_val == 1.0;
+					}
+					else
+					{
+						if (temp->m_val == 0.0) return false;
+						temp = temp->p_next;
+						while (temp)
+						{
+							if (temp == this) { break; }
+							if (temp->m_val != 1.0f)
+							{
+								return false;
+							}
+							temp = temp->p_next;
+						}
+						return true;
+					}
+					break;
+				}
+				case OR:
+				{
+					LinkedSignal *temp = this;
+					if (temp == p_next)
+					{
+						return temp->m_val == 1.0;
+					}
+					else
+					{
+						if (temp->m_val == 1.0) return true;
+						temp = temp->p_next;
+						while (temp)
+						{
+							if (temp == this) { break; }
+							if (temp->m_val == 1.0f)
+							{
+								return true;
+							}
+							temp = temp->p_next;
+						}
+						return false;
+					}
+					break;
+				}
+				case XOR:
+					return true;
+				case NAND:
+					return true;
+				}
+			}
+			LinkedSignal *p_next = this;
+			LinkedSignal *p_prev = this;
+		};
+
+		
+
+		
+		template<class SIGNAL>
+		class Transition
+		{
+		public:
+			Transition(BaseState *From, BaseState *To, SIGNAL* signal)
+			{
+				from = From;
+				to = To;
+				next = this;
+				prev = this;
+				m_signal = signal;
+			}
+
+			virtual BaseState* Fire_(SIGNAL* signal) = 0;
+		
+			SIGNAL* m_signal = 0;
+			BaseState *from;
+			BaseState *to;
+			Transition *next = 0;
+			Transition *prev = 0;
+		};
+
+		class StateTransition : public Transition <Signal>
+		{
+		public:
+			StateTransition(BaseState *From, BaseState *To, Signal* signal) : Transition(From, To, signal)
+			{
+			}
+			BaseState* Fire_(Signal* signal)
+			{
+				if (signal->id == m_signal->id)
+				{
+					return to;
+				}
+				return from;
+			}
+		};
+
+		
+		
+		class LogicalTransition : public Transition<LinkedSignal>
+		{
+		public:
+			LogicalTransition(BaseState *From, BaseState *To, LinkedSignal* signal, LOGICAL_OP t_op) : Transition(From, To, signal)
+			{
+				op = t_op;
+			}
+			BaseState* Fire_(LinkedSignal* signal)
+			{
+				if (signal->id == m_signal->id)
+				{
+					bool result = signal->Evaluate(op);
+					if (result)
+						return to;
+				}
+				return from;
+			}
+			LOGICAL_OP op = LOGICAL_OP::OR;
+
+		};
+		
+		class BaseState
+		{
+		public:
+			int m_id = -1;
+			BaseState(int id) { m_id = id; }
+			virtual BaseState *Activate(Signal *c) = 0;
+			virtual void AddTransition(State* p, Signal *c) = 0;
+		};
+
+		class State : public BaseState
+		{
+		public:
+			State(int id) : BaseState(id)
+			{
+				
+			}
+			BaseState *Activate(Signal *c)
+			{
+				BaseState* output = this;
+				StateTransition* temp = m_start;
+				while (temp)
+				{
+					output = temp->Fire_(c);
+					if (output != this)
+						return output;
+					temp = (StateTransition*)temp->next;
+					if (temp == m_start)
+						break;
+				}
+				return output;
+			}
+
+			void AddTransition(State* p, Signal *c)
+			{
+				StateTransition *pNewTransition = new StateTransition(this, p, c);
+
+				if (m_start)
+				{
+					StateTransition *temp = m_start;
+					StateTransition *prev = (StateTransition*) m_start->prev;
+
+					if (prev != temp)
+					{
+						prev->next = pNewTransition;
+						temp->prev = pNewTransition;
+						pNewTransition->next = temp;
+						pNewTransition->prev = prev;
+					}
+					else
+					{
+						temp->next = pNewTransition;
+						pNewTransition->next = temp;
+						temp->prev = pNewTransition;
+						pNewTransition->prev = temp;
+					}
+				}
+				else
+				{
+					m_start = pNewTransition;
+
+				}
+
+
+			}
+
+
+			StateTransition *m_start = 0;
+		};
+
+		class LState : public BaseState
+		{
+		public:
+			LState(int id) : BaseState(id)
+			{
+
+			}
+			BaseState *Activate(Signal *c)
+			{
+				BaseState* output = (State*)this;
+				LogicalTransition* temp = m_start;
+				while (temp)
+				{
+					output = temp->Fire_((LinkedSignal*)c);
+					if (output != (State*)this)
+						return output;
+					temp = (LogicalTransition*)temp->next;
+					if (temp == m_start)
+						break;
+				}
+				return output;
+			}
+
+			void AddTransition(State* p, Signal *c)
+			{
+				LogicalTransition *pNewTransition = new LogicalTransition(this, p, (LinkedSignal*)c, OR);
+
+				if (m_start)
+				{
+					LogicalTransition *temp = m_start;
+					LogicalTransition *prev = (LogicalTransition*)m_start->prev;
+
+					if (prev != temp)
+					{
+						prev->next = pNewTransition;
+						temp->prev = pNewTransition;
+						pNewTransition->next = temp;
+						pNewTransition->prev = prev;
+					}
+					else
+					{
+						temp->next = pNewTransition;
+						pNewTransition->next = temp;
+						temp->prev = pNewTransition;
+						pNewTransition->prev = temp;
+					}
+				}
+				else
+				{
+					m_start = pNewTransition;
+
+				}
+
+
+			}
+
+
+			LogicalTransition *m_start = 0;
+
+		};
+
+
+		class StateMachine
+		{
+		public:
+
+			BaseState* ProcessEvent(Signal *evt)
+			{
+				//if (m_current_State >= 0 && m_current_State < m_states.size())
+				m_current_State = m_current_State->Activate(evt);
+
+				return m_current_State;
+			}
+			BaseState* GetCurrentState()
+			{
+				return m_current_State;
+			}
+			void SetStartState(BaseState* start)
+			{
+				m_current_State = start;
+			}
+
+			BaseState* m_current_State = 0;
+			vector<State*> m_states;
+		};
+
+		void RunTest()
+		{
+			cout << endl;
+			cout << "****************************************************" << endl;
+
+			State start_state(START_STATE);
+			State middle_state(MIDDLE_STATE);
+			State end_state(END_STATE);
+
+			Signal s1(EVENT_1);
+			Signal s2(EVENT_2);
+			Signal s3(EVENT_3);
+			Signal s4(EVENT_4);
+			Signal s5(EVENT_5);
+			Signal s6(EVENT_6);
+
+			start_state.AddTransition(&middle_state, &s1);
+			start_state.AddTransition(&end_state, &s2);
+
+			middle_state.AddTransition(&end_state, &s3);
+			middle_state.AddTransition(&start_state, &s4);
+
+			end_state.AddTransition(&middle_state, &s5);
+			end_state.AddTransition(&start_state, &s6);
+
+			StateMachine m;
+			m.SetStartState(&start_state);
+
+			Signal *state_events[6] = { &s1, &s2, &s3, &s4, &s5, &s6 };
+
+
+			for (int i = 0; i < 7; i++)
+			{
+				cout << "State machine current state:   ";
+				BaseState* st = m.GetCurrentState();
+
+				switch (STATES(st->m_id))
+				{
+				case STATES::START_STATE:
+					cout << "START_STATE" << endl;
+					break;
+				case STATES::MIDDLE_STATE:
+					cout << "MIDDLE_STATE" << endl;
+					break;
+				case STATES::END_STATE:
+					cout << "END_STATE" << endl;
+					break;
+				default:
+					break;
+				};
+				cout << "performing transition: " << string_events[transitions[i]] << endl;
+				st = m.ProcessEvent(state_events[transitions[i]]);
+				//state_machine.stateTransition(transitions[i]);
+			}
+		}
+
+	};
+};
+
+
+
+
 int main(int argc, char** argv)
 {
 	EXPERT_VERSION_1::RunExample();
 
+
+
+	STATE_MACHINE::LINKED_STATE_MACHINE::RunTest();
+
+	STATE_MACHINE::LINKED_STATE_MACHINE_VERSION_2::RunTest();
 	return 0;
 }
 
