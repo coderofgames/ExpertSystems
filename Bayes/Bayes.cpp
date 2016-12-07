@@ -924,710 +924,7 @@ namespace STATE_MACHINE
 
 	};
 
-	namespace LINKED_STATE_MACHINE_VERSION_2
-	{
-		using namespace TEST_STATES;
 
-		class BaseState;
-		class State;
-		template< class SIGNAL> class Transition;
-
-		enum SIGNAL_TYPE {BASE, FLOAT, LIST};
-
-		class Signal
-		{
-		public:
-			Signal(int signal_id)
-			{
-				id = signal_id;
-			}
-			int id;
-			int m_type = SIGNAL_TYPE::BASE;
-		};
-
-		class Float_Signal : public Signal
-		{
-		public:
-			Float_Signal(int signal_id, float value) : Signal(signal_id)
-			{
-				m_val = value;
-				m_type = SIGNAL_TYPE::FLOAT;
-			}
-			float m_val;
-		};
-
-		enum LOGICAL_OP { AND, OR, XOR, NAND };
-
-		class LinkedSignal : public Float_Signal
-		{
-		public:
-			LinkedSignal(int signal_id, float value) : Float_Signal(signal_id, value)
-			{
-				m_type = SIGNAL_TYPE::LIST;
-			}
-			void AddSignal(LinkedSignal* s)
-			{
-				if (p_next == this)
-				{
-					p_next = s;
-					s->p_prev = this;
-					this->p_prev = s;
-					s->p_next = this;
-				}
-				else
-				{
-					p_prev->p_next = s;
-					s->p_prev = p_prev;
-					p_prev = s;
-					s->p_next = this;
-				}
-			}
-
-			bool Evaluate(LOGICAL_OP op)
-			{
-				switch (op)
-				{
-				case AND:
-				{
-					LinkedSignal *temp = this;
-					if (temp == p_next)
-					{
-						return temp->m_val == 1.0;
-					}
-					else
-					{
-						if (temp->m_val == 0.0) return false;
-						temp = temp->p_next;
-						while (temp)
-						{
-							if (temp == this) { break; }
-							if (temp->m_val != 1.0f)
-							{
-								return false;
-							}
-							temp = temp->p_next;
-						}
-						return true;
-					}
-					break;
-				}
-				case OR:
-				{
-					LinkedSignal *temp = this;
-					if (temp == p_next)
-					{
-						return temp->m_val == 1.0;
-					}
-					else
-					{
-						if (temp->m_val == 1.0) return true;
-						temp = temp->p_next;
-						while (temp)
-						{
-							if (temp == this) { break; }
-							if (temp->m_val == 1.0f)
-							{
-								return true;
-							}
-							temp = temp->p_next;
-						}
-						return false;
-					}
-					break;
-				}
-				case XOR:
-					return true;
-				case NAND:
-					return true;
-				}
-			}
-			LinkedSignal *p_next = this;
-			LinkedSignal *p_prev = this;
-		};
-
-		
-
-		
-		template<class SIGNAL>
-		class Transition
-		{
-		public:
-			Transition(BaseState *From, BaseState *To, SIGNAL* signal)
-			{
-				from = From;
-				to = To;
-				next = this;
-				prev = this;
-				m_signal = signal;
-			}
-
-			virtual BaseState* Fire_(SIGNAL* signal) = 0;
-		
-			SIGNAL* m_signal = 0;
-			BaseState *from;
-			BaseState *to;
-			Transition *next = 0;
-			Transition *prev = 0;
-		};
-
-		class StateTransition : public Transition <Signal>
-		{
-		public:
-			StateTransition(BaseState *From, BaseState *To, Signal* signal) : Transition(From, To, signal)
-			{
-			}
-			BaseState* Fire_(Signal* signal)
-			{
-				if (signal->id == m_signal->id)
-				{
-					return to;
-				}
-				return from;
-			}
-		};
-
-		
-		
-		class LogicalTransition : public Transition<LinkedSignal>
-		{
-		public:
-			LogicalTransition(BaseState *From, BaseState *To, LinkedSignal* signal, LOGICAL_OP t_op) : Transition(From, To, signal)
-			{
-				op = t_op;
-			}
-			BaseState* Fire_(LinkedSignal* signal)
-			{
-				if (signal->id == m_signal->id)
-				{
-					bool result = signal->Evaluate(op);
-					if (result)
-						return to;
-				}
-				return from;
-			}
-			LOGICAL_OP op = LOGICAL_OP::OR;
-
-		};
-		
-		class BaseState
-		{
-		public:
-			int m_id = -1;
-			BaseState(int id) { m_id = id; }
-			virtual BaseState *Activate(Signal *c) = 0;
-			virtual void AddTransition(State* p, Signal *c) = 0;
-		};
-
-		class State : public BaseState
-		{
-		public:
-			State(int id) : BaseState(id)
-			{
-				
-			}
-			BaseState *Activate(Signal *c)
-			{
-				BaseState* output = this;
-				StateTransition* temp = m_start;
-				while (temp)
-				{
-					output = temp->Fire_(c);
-					if (output != this)
-						return output;
-					temp = (StateTransition*)temp->next;
-					if (temp == m_start)
-						break;
-				}
-				return output;
-			}
-
-			void AddTransition(State* p, Signal *c)
-			{
-				StateTransition *pNewTransition = new StateTransition(this, p, c);
-
-				if (m_start)
-				{
-					StateTransition *temp = m_start;
-					StateTransition *prev = (StateTransition*) m_start->prev;
-
-					if (prev != temp)
-					{
-						prev->next = pNewTransition;
-						temp->prev = pNewTransition;
-						pNewTransition->next = temp;
-						pNewTransition->prev = prev;
-					}
-					else
-					{
-						temp->next = pNewTransition;
-						pNewTransition->next = temp;
-						temp->prev = pNewTransition;
-						pNewTransition->prev = temp;
-					}
-				}
-				else
-				{
-					m_start = pNewTransition;
-
-				}
-
-
-			}
-
-
-			StateTransition *m_start = 0;
-		};
-
-		class LState : public BaseState
-		{
-		public:
-			LState(int id) : BaseState(id)
-			{
-
-			}
-			BaseState *Activate(Signal *c)
-			{
-				BaseState* output = (State*)this;
-				LogicalTransition* temp = m_start;
-				while (temp)
-				{
-					output = temp->Fire_((LinkedSignal*)c);
-					if (output != (State*)this)
-						return output;
-					temp = (LogicalTransition*)temp->next;
-					if (temp == m_start)
-						break;
-				}
-				return output;
-			}
-
-			void AddTransition(State* p, Signal *c)
-			{
-				LogicalTransition *pNewTransition = new LogicalTransition(this, p, (LinkedSignal*)c, OR);
-
-				if (m_start)
-				{
-					LogicalTransition *temp = m_start;
-					LogicalTransition *prev = (LogicalTransition*)m_start->prev;
-
-					if (prev != temp)
-					{
-						prev->next = pNewTransition;
-						temp->prev = pNewTransition;
-						pNewTransition->next = temp;
-						pNewTransition->prev = prev;
-					}
-					else
-					{
-						temp->next = pNewTransition;
-						pNewTransition->next = temp;
-						temp->prev = pNewTransition;
-						pNewTransition->prev = temp;
-					}
-				}
-				else
-				{
-					m_start = pNewTransition;
-
-				}
-
-
-			}
-
-
-			LogicalTransition *m_start = 0;
-
-		};
-
-
-		class StateMachine
-		{
-		public:
-
-			BaseState* ProcessEvent(Signal *evt)
-			{
-				//if (m_current_State >= 0 && m_current_State < m_states.size())
-				m_current_State = m_current_State->Activate(evt);
-
-				return m_current_State;
-			}
-			BaseState* GetCurrentState()
-			{
-				return m_current_State;
-			}
-			void SetStartState(BaseState* start)
-			{
-				m_current_State = start;
-			}
-
-			BaseState* m_current_State = 0;
-			vector<State*> m_states;
-		};
-
-		void RunTest()
-		{
-			cout << endl;
-			cout << "****************************************************" << endl;
-
-			State start_state(START_STATE);
-			State middle_state(MIDDLE_STATE);
-			State end_state(END_STATE);
-
-			Signal s1(EVENT_1);
-			Signal s2(EVENT_2);
-			Signal s3(EVENT_3);
-			Signal s4(EVENT_4);
-			Signal s5(EVENT_5);
-			Signal s6(EVENT_6);
-
-			start_state.AddTransition(&middle_state, &s1);
-			start_state.AddTransition(&end_state, &s2);
-
-			middle_state.AddTransition(&end_state, &s3);
-			middle_state.AddTransition(&start_state, &s4);
-
-			end_state.AddTransition(&middle_state, &s5);
-			end_state.AddTransition(&start_state, &s6);
-
-			StateMachine m;
-			m.SetStartState(&start_state);
-
-			Signal *state_events[6] = { &s1, &s2, &s3, &s4, &s5, &s6 };
-
-
-			for (int i = 0; i < 7; i++)
-			{
-				cout << "State machine current state:   ";
-				BaseState* st = m.GetCurrentState();
-
-				switch (STATES(st->m_id))
-				{
-				case STATES::START_STATE:
-					cout << "START_STATE" << endl;
-					break;
-				case STATES::MIDDLE_STATE:
-					cout << "MIDDLE_STATE" << endl;
-					break;
-				case STATES::END_STATE:
-					cout << "END_STATE" << endl;
-					break;
-				default:
-					break;
-				};
-				cout << "performing transition: " << string_events[transitions[i]] << endl;
-				st = m.ProcessEvent(state_events[transitions[i]]);
-				//state_machine.stateTransition(transitions[i]);
-			}
-		}
-
-	};
-
-	namespace LINKED_STATE_MACHINE_PROCESSOR
-	{
-		using namespace LINKED_STATE_MACHINE;
-		enum CASH_MACHINE_STATES {
-			OPTIONS, VIEW_BALANCE, QUERY_MORE_TIME, QUERY_OTHER_TRANSACTION,
-			SELECT_QUANTITY, DISPENSE_MESSAGE, TAKE_CARD, MORE_TIME
-		};
-		string cash_machine_state_strings[8] = { "OPTIONS", "VIEW_BALANCE", "QUERY_MORE_TIME", "QUERY_OTHER_TRANSACTION",
-			"SELECT_QUANTITY", "DISPENSE_MESSAGE", "TAKE_CARD", "MORE_TIME" };
-		class StateImpl : public State
-		{
-		public:
-			StateImpl(int id) : State(id)
-			{
-
-			}
-
-			virtual State* Process()
-			{
-				cout << "Processing State: " << cash_machine_state_strings[this->m_id] << endl;
-				return this;
-			}
-
-
-
-		};
-
-		class TimedState : public StateImpl
-		{
-		public:
-
-			TimedState(int id) : StateImpl(id)
-			{
-
-			}
-
-			void SetTimeout(double TimeOut, Signal* stateTimeOut)
-			{
-				this->time_out = TimeOut;
-				this->time_out_signal = stateTimeOut;
-			}
-			
-			State* Tick(double dt)
-			{
-				elapsed_time += dt;
-				if (elapsed_time >= time_out)
-				{
-					if (this->time_out_signal)
-					{
-						cout << "	state: " << cash_machine_state_strings[this->m_id] << " timed out" << endl;
-						return	this->Activate(this->time_out_signal);
-					}
-				}
-				
-				return this;
-			}
-			
-			Signal *time_out_signal = 0;
-
-			double start_time = 0.0;
-			double elapsed_time = 0.0;
-			double time_out = 0.0;
-		};
-
-
-		
-		class MessageState : public TimedState
-		{
-		public:
-			MessageState(int id) : TimedState(id)
-			{
-
-			}
-
-			void SetMessage(string Message){
-				message = Message;
-			}
-
-			virtual State* Process()
-			{
-				cout << message << "      " << endl;
-				return StateImpl::Process();
-				
-			}
-
-			string message = "";
-		};
-
-		class InputState : public MessageState
-		{
-		public:
-			InputState(int id) : MessageState(id)
-			{
-
-			}
-
-			virtual State* Process()
-			{
-				cout << "select an option" << endl;
-				for (int i = 0; i < options.size(); i++)
-					cout << "option: " << i << " " << options[i] << endl;
-
-
-				char ch = -1;
-				cin >> ch;
-				
-				if (ch >= '1' && ch <= '1'+ options.size())
-				{
-					int var = (int)ch - (int)'1';
-
-					int the_signal = options[var];
-
-					State* output = this;
-					Transition* temp = m_start;
-					while (temp)
-					{
-						output = temp->Fire_(the_signal);
-						if (output != this)
-							return output;
-						temp = temp->next;
-						if (temp == m_start)
-							break;
-					}
-					return output;
-				}
-				else
-				{
-					cout << "Select a valid otion " << endl;
-				}
-				
-				return MessageState::Process();
-
-			}
-
-			void AddOption(int newOption)
-			{
-				options.push_back(newOption);
-
-			}
-
-			vector<int> options;
-		};
-
-		class BalanceState : public TimedState
-		{
-		public:
-			BalanceState() : TimedState(VIEW_BALANCE)
-			{}
-			State* Process()
-			{
-				return TimedState::Process();
-			}
-		};
-
-
-		void RunTestCashMachine()
-		{
-			cout << endl;
-			cout << "****************************************************" << endl;
-
-			enum CASH_MACHINE_EVENTS {OPTION_SELECT_1, OPTION_SELECT_2, OPTION_SELECT_3 };
-			Signal s1(OPTION_SELECT_1);
-			Signal s2(OPTION_SELECT_2);
-			Signal s3(OPTION_SELECT_3);
-	
-
-			InputState start_state(OPTIONS);
-			start_state.AddOption(OPTION_SELECT_1); 
-			start_state.AddOption(OPTION_SELECT_2);
-			start_state.AddOption(OPTION_SELECT_3);
-			start_state.SetTimeout(10, &s3);
-
-			MessageState view_balance_state(VIEW_BALANCE);
-			view_balance_state.SetMessage("Your Balance Is 100000 kudos");
-			view_balance_state.SetTimeout(10, &s1);
-
-			InputState time_query_state(QUERY_MORE_TIME);
-			time_query_state.AddOption(OPTION_SELECT_1);
-			time_query_state.AddOption(OPTION_SELECT_2);
-			time_query_state.SetTimeout(10, &s3);
-
-			InputState other_transaction_query_state(QUERY_OTHER_TRANSACTION);
-			other_transaction_query_state.AddOption(OPTION_SELECT_1);
-			other_transaction_query_state.AddOption(OPTION_SELECT_2);
-			other_transaction_query_state.SetTimeout(10, &s3);
-
-			InputState select_quantity_state(SELECT_QUANTITY);
-			select_quantity_state.AddOption(OPTION_SELECT_1);
-			select_quantity_state.AddOption(OPTION_SELECT_2);
-			select_quantity_state.SetTimeout(10, &s2);
-
-			MessageState dispense_state(DISPENSE_MESSAGE);
-			dispense_state.SetMessage("dispensing your money");
-			view_balance_state.SetTimeout(2, &s1);
-			
-
-			InputState time_query2_state(MORE_TIME);
-			time_query2_state.AddOption(OPTION_SELECT_1);
-			time_query2_state.AddOption(OPTION_SELECT_2);
-			time_query2_state.SetTimeout(10, &s3);
-
-			MessageState take_card_state(TAKE_CARD);
-			dispense_state.SetMessage("please take your card");
-
-
-			start_state.AddTransition(&view_balance_state, &s1);
-			start_state.AddTransition(&select_quantity_state, &s2);
-			start_state.AddTransition(&take_card_state, &s3);
-
-			//time_query_state.AddTransition(&start_state, &s1);
-
-			view_balance_state.AddTransition(&other_transaction_query_state, &s1);
-
-			other_transaction_query_state.AddTransition(&start_state, &s1);
-			other_transaction_query_state.AddTransition(&take_card_state, &s2);
-
-			select_quantity_state.AddTransition(&dispense_state, &s1);
-
-		//	end_state.AddTransition(&middle_state, &s5);
-		//	end_state.AddTransition(&start_state, &s6);
-
-			StateMachine m;
-			m.SetStartState(&start_state);
-
-			Signal *state_events[3] = { &s1, &s2, &s3 };
-
-			char ch = 0;
-
-			Timer t;
-			t.Start();
-			double start_time = 0.0f;
-
-			while (ch != 'q')
-			{
-				//t.Update();
-				t.Stop();
-				double dt = t.GetTimeInSeconds();
-				cin >> ch;
-
-				TimedState* st = (TimedState*)m.GetCurrentState();
-				m.m_current_State = st->Tick(dt);
-
-				st->Process();
-
-
-				int i = (int)ch - (int)'1';
-
-				t.Reset();
-				t.Start();
-			}
-			
-
-		}
-
-		void RunTest()
-		{
-			cout << endl;
-			cout << "****************************************************" << endl;
-
-			StateImpl start_state(START_STATE);
-			StateImpl middle_state(MIDDLE_STATE);
-			StateImpl end_state(END_STATE);
-
-			Signal s1(EVENT_1);
-			Signal s2(EVENT_2);
-			Signal s3(EVENT_3);
-			Signal s4(EVENT_4);
-			Signal s5(EVENT_5);
-			Signal s6(EVENT_6);
-
-			start_state.AddTransition(&middle_state, &s1);
-			start_state.AddTransition(&end_state, &s2);
-
-			middle_state.AddTransition(&end_state, &s3);
-			middle_state.AddTransition(&start_state, &s4);
-
-			end_state.AddTransition(&middle_state, &s5);
-			end_state.AddTransition(&start_state, &s6);
-
-			StateMachine m;
-			m.SetStartState(&start_state);
-
-			Signal *state_events[6] = { &s1, &s2, &s3, &s4, &s5, &s6 };
-
-			char ch =0;
-
-			while (ch != 'q')
-			{
-				cin >> ch;
-
-				StateImpl* st = (StateImpl*)m.GetCurrentState();
-				st->Process();
-				
-				if (ch >= '1' && ch <= '6')
-				{
-					int i = (int)ch - (int)'1';
-					cout << "performing transition: " << string_events[i] << endl;
-					m.ProcessEvent(state_events[i]);
-				}
-
-			}
-		
-		}
-
-
-	};
 
 	namespace VECTOR_STATE_MACHINE
 	{
@@ -1693,20 +990,32 @@ namespace STATE_MACHINE
 		class InputProcessor
 		{
 		public:
+
 			void AddBinding(char c, Signal *s)
 			{
 				m_input_signal_map[c] = s;
 				user_inputs.push_back(c);
 			}
+			void AddBinding(char c, Signal *s, string text)
+			{
+				m_input_signal_map[c] = s;
+				user_inputs.push_back(c);
+				m_input_text_map[c] = text;
+			}
+
 
 			Signal* Process()
 			{
-
-				cout << endl;
-				cout << "Enter an option" << endl;
+				//cout << endl;
+				//cout << "Enter an option" << endl;
 				for (char a : user_inputs)
 				{
-					cout << a << endl;
+					if (m_input_text_map.bucket_count()!=0)
+						cout << a << ": " << m_input_text_map[a] << endl;
+					else
+					{
+						cout << a << endl;
+					}
 				}
 
 				char c = 0;
@@ -1724,20 +1033,20 @@ namespace STATE_MACHINE
 
 			vector< char > user_inputs;
 			unordered_map <char, Signal*> m_input_signal_map;
+			unordered_map <char, string> m_input_text_map;
 		};
 
 		class StateProcessObject
 		{
 		public:
-			Signal* Process(bool needPrint){
 
+			Signal* Process(bool needPrint)
+			{
 				if (!needPrint)
 					return 0;
 
-					
 				if (m_message)	
 				{
-
 					m_message->PrintMessage();
 				}
 
@@ -1746,15 +1055,10 @@ namespace STATE_MACHINE
 					Signal *s = inputs->Process();
 					if (s != 0)
 					{
-
 						return s;
 					}
-
 				}
 				
-
-
-
 				return 0;
 			}
 
@@ -1774,6 +1078,14 @@ namespace STATE_MACHINE
 					inputs = new InputProcessor();
 
 				inputs->AddBinding(c, s);
+				return this;
+			}
+			StateProcessObject* AddInputOption(char c, Signal *s, string text)
+			{
+				if (inputs == 0)
+					inputs = new InputProcessor();
+
+				inputs->AddBinding(c, s, text);
 				return this;
 			}
 
@@ -1810,21 +1122,18 @@ namespace STATE_MACHINE
 			{
 				delete m_stateProcessObject;
 			}
+
 			void OnActivate()
 			{
-			//	m_timer.Reset();
-			//	m_timer.Start();
 				total_time = 0.0;
 				needPrint = true;
+				system("cls");
 			}
 
 			void OnDeactivate()
 			{
-			//	m_timer.Update();
 				total_time = 0.0;
 				needPrint = false; 
-			//	m_timer.Stop();
-			//	m_timer.Reset();
 			}
 
 			bool needPrint = true;
@@ -1842,11 +1151,7 @@ namespace STATE_MACHINE
 
 				if (timeout)
 				{
-					//m_timer.Update();
-					
-					
-					//double time_taken = m_timer.GetTimeDelta();
-					//cout << time_taken << endl;
+
 					if (total_time > m_stopTime)
 					{
 						return Activate(timeout);
@@ -1867,6 +1172,10 @@ namespace STATE_MACHINE
 			void AddInputOption(char c, Signal* s)
 			{
 				m_stateProcessObject->AddInputOption(c, s);
+			}
+			void AddInputOption(char c, Signal* s, string text)
+			{
+				m_stateProcessObject->AddInputOption(c, s, text);
 			}
 
 			State *Activate(Signal *c)
@@ -2096,8 +1405,160 @@ namespace STATE_MACHINE
 				//state_machine.stateTransition(transitions[i]);
 			}
 		}
+		void RunTest3()
+		{
+			enum TEST_STATES_2 { SELECT_OPTION, 
+								VIEW_BALANCE, 
+								WITHDRAW_CASH, 
+								PRINT_STATEMENT, 
+								MORE_TIME, 
+								MORE_TIME_WITHDRAW,
+								ANOTHER_SERVICE,
+								EMIT_10,
+								EMIT_20,
+								EMIT_50,
+								EMIT_OTHER,
+								RETURN_CARD };
 
-	}
+			string state_names[12]={
+				"SELECT_OPTION",
+				"VIEW_BALANCE",
+				"WITHDRAW_CASH",
+				"PRINT_STATEMENT",
+				"MORE_TIME",
+				"MORE_TIME_WITHDRAW"
+				"ANOTHER_SERVICE",
+				"EMIT_10",
+				"EMIT_20",
+				"EMIT_50",
+				"EMIT_OTHER",
+				"RETURN_CARD"
+			};
+			Signal s1(1);
+			Signal s2(2);
+			Signal s3(3);
+			Signal s4(4);
+			Signal s5(5);
+			Signal s6(6);
+			Signal s7(7);
+			Signal s8(8);
+			Signal s9(9);
+			Signal s10(10);
+
+			State select_option(SELECT_OPTION);
+			State view_balance(VIEW_BALANCE);
+			State withdraw_cash(WITHDRAW_CASH);
+			State print_statement(PRINT_STATEMENT);
+			State more_time(MORE_TIME);
+			State more_time_withdraw(MORE_TIME_WITHDRAW);
+			State another_service(ANOTHER_SERVICE);
+			State emit_10(EMIT_10);
+			State emit_20(EMIT_20);
+			State emit_50(EMIT_50);
+			State emit_other(EMIT_OTHER);
+			State return_card(RETURN_CARD);
+
+			select_option.AddTransition(&view_balance, &s1);
+			select_option.AddTransition(&withdraw_cash, &s2);
+			select_option.AddTransition(&print_statement, &s3);
+			select_option.AddMessageLine("Select an option");
+			select_option.AddInputOption('1', &s1, "View Balance");
+			select_option.AddInputOption('2', &s2, "Withdraw Cash");
+			select_option.AddInputOption('3', &s3, "Print Statement");
+			select_option.AddTimeout(10, &more_time);
+
+			more_time.AddTransition(&select_option, &s3);
+			more_time.AddTransition(&return_card, &s4);
+			more_time.AddMessageLine("Would you like More Time? ");
+			more_time.AddInputOption('1', &s3, "yes");
+			more_time.AddInputOption('2', &s4, "no");
+
+			more_time_withdraw.AddTransition(&withdraw_cash, &s3);
+			more_time_withdraw.AddTransition(&return_card, &s4);
+			more_time_withdraw.AddMessageLine("Would you like More Time? ");
+
+			more_time_withdraw.AddInputOption('1', &s3, "yes");
+			more_time_withdraw.AddInputOption('2', &s4, "no");
+			
+
+			view_balance.AddTransition(&select_option, &s3);
+			view_balance.AddTransition(&return_card, &s4);
+			view_balance.AddMessageLine("Your balance is *database lookup* ");
+			view_balance.AddMessageLine("Would you like another service? ");
+			view_balance.AddInputOption('1', &s3, "yes");
+			view_balance.AddInputOption('2', &s4, "no");
+			//front_left.AddTimeout(5, &enter);
+
+			print_statement.AddTransition(&select_option, &s3);
+			print_statement.AddTransition(&return_card, &s4);
+			print_statement.AddMessageLine("System prints balance statement *database lookup* ");
+			print_statement.AddMessageLine("Would you like another service? ");
+			print_statement.AddInputOption('1', &s3, "yes");
+			print_statement.AddInputOption('2', &s4, "no");
+			
+
+			//front_right.AddTransition(&center_right, &s5);
+			return_card.AddMessageLine("Please take your card!");
+			return_card.AddMessageLine("have a great day!");
+			
+			withdraw_cash.AddTransition(&emit_10, &s3);
+			withdraw_cash.AddTransition(&emit_20, &s4);
+			withdraw_cash.AddTransition(&emit_50, &s5);
+			withdraw_cash.AddTransition(&emit_other, &s6);
+			withdraw_cash.AddTransition(&return_card, &s7);
+			withdraw_cash.AddMessageLine("Please select the amount");
+			withdraw_cash.AddInputOption('1', &s3 , "\x9C 10 ");
+			withdraw_cash.AddInputOption('2', &s4, "\x9C 20");
+			withdraw_cash.AddInputOption('3', &s5, "\x9C 50 ");
+			withdraw_cash.AddInputOption('4', &s6, "other");
+			withdraw_cash.AddInputOption('5', &s7, "return card");
+			withdraw_cash.AddTimeout(10, &more_time_withdraw);
+
+			emit_10.AddMessageLine("Machine Emits 10");
+			emit_10.AddTimeout(4, &return_card);
+
+			emit_20.AddMessageLine("Machine Emits 20");
+			emit_20.AddTimeout(4, &return_card);
+
+			emit_50.AddMessageLine("Machine Emits 50");
+			emit_50.AddTimeout(4, &return_card);
+
+			emit_other.AddMessageLine("Machine Emits other");
+			emit_other.AddMessageLine("todo ... ");
+			emit_other.AddTimeout(4, &return_card);
+			
+
+
+		
+
+			StateMachine m;
+			m.SetStartState(&select_option);
+
+			char c = 0;
+
+			Timer m_timer;
+
+			double total_time = 0.0;
+
+			double time_delta = 0.0;
+			m_timer.Start();
+			time_delta = m_timer.Update();
+
+			total_time += time_delta;
+
+			system("cls");
+
+			while (m.GetCurrentState() != &return_card)
+			{
+				time_delta = m_timer.Update();
+				total_time += time_delta;
+				//cout << "Current State: " << total_time << endl;// state_names[m.GetCurrentState()->m_id] << endl;
+				m.Process(time_delta);
+			}
+			m.Process(time_delta);
+
+		}
+	};
 };
 
 
@@ -2111,11 +1572,9 @@ int main(int argc, char** argv)
 
 	STATE_MACHINE::LINKED_STATE_MACHINE::RunTest();
 
-	STATE_MACHINE::LINKED_STATE_MACHINE_VERSION_2::RunTest();
 
-//	STATE_MACHINE::LINKED_STATE_MACHINE_PROCESSOR::RunTestCashMachine();
+	STATE_MACHINE::VECTOR_STATE_MACHINE::RunTest3();
 
-	STATE_MACHINE::VECTOR_STATE_MACHINE::RunTest2();
 	return 0;
 }
 
