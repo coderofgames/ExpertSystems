@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include "matrix_solver.h"
+#include "Timer.h"
 
 using std::vector;
 using std::cout;
@@ -723,6 +724,7 @@ namespace STATE_MACHINE
 	namespace TEST_STATES
 	{
 		enum STATES { START_STATE, MIDDLE_STATE, END_STATE };
+		string STRING_STATES[3] = { "START_STATE", "MIDDLE_STATE", "END_STATE" };
 		enum EVENTS { EVENT_1, EVENT_2, EVENT_3, EVENT_4, EVENT_5, EVENT_6 };
 		string string_events[6] = { "EVENT_1", "EVENT_2", "EVENT_3", "EVENT_4", "EVENT_5", "EVENT_6" };
 		int transitions[7] = { EVENT_1, EVENT_4, EVENT_2, EVENT_5, EVENT_3, EVENT_6, EVENT_2 };
@@ -918,6 +920,7 @@ namespace STATE_MACHINE
 				//state_machine.stateTransition(transitions[i]);
 			}
 		}
+
 
 	};
 
@@ -1318,6 +1321,783 @@ namespace STATE_MACHINE
 		}
 
 	};
+
+	namespace LINKED_STATE_MACHINE_PROCESSOR
+	{
+		using namespace LINKED_STATE_MACHINE;
+		enum CASH_MACHINE_STATES {
+			OPTIONS, VIEW_BALANCE, QUERY_MORE_TIME, QUERY_OTHER_TRANSACTION,
+			SELECT_QUANTITY, DISPENSE_MESSAGE, TAKE_CARD, MORE_TIME
+		};
+		string cash_machine_state_strings[8] = { "OPTIONS", "VIEW_BALANCE", "QUERY_MORE_TIME", "QUERY_OTHER_TRANSACTION",
+			"SELECT_QUANTITY", "DISPENSE_MESSAGE", "TAKE_CARD", "MORE_TIME" };
+		class StateImpl : public State
+		{
+		public:
+			StateImpl(int id) : State(id)
+			{
+
+			}
+
+			virtual State* Process()
+			{
+				cout << "Processing State: " << cash_machine_state_strings[this->m_id] << endl;
+				return this;
+			}
+
+
+
+		};
+
+		class TimedState : public StateImpl
+		{
+		public:
+
+			TimedState(int id) : StateImpl(id)
+			{
+
+			}
+
+			void SetTimeout(double TimeOut, Signal* stateTimeOut)
+			{
+				this->time_out = TimeOut;
+				this->time_out_signal = stateTimeOut;
+			}
+			
+			State* Tick(double dt)
+			{
+				elapsed_time += dt;
+				if (elapsed_time >= time_out)
+				{
+					if (this->time_out_signal)
+					{
+						cout << "	state: " << cash_machine_state_strings[this->m_id] << " timed out" << endl;
+						return	this->Activate(this->time_out_signal);
+					}
+				}
+				
+				return this;
+			}
+			
+			Signal *time_out_signal = 0;
+
+			double start_time = 0.0;
+			double elapsed_time = 0.0;
+			double time_out = 0.0;
+		};
+
+
+		
+		class MessageState : public TimedState
+		{
+		public:
+			MessageState(int id) : TimedState(id)
+			{
+
+			}
+
+			void SetMessage(string Message){
+				message = Message;
+			}
+
+			virtual State* Process()
+			{
+				cout << message << "      " << endl;
+				return StateImpl::Process();
+				
+			}
+
+			string message = "";
+		};
+
+		class InputState : public MessageState
+		{
+		public:
+			InputState(int id) : MessageState(id)
+			{
+
+			}
+
+			virtual State* Process()
+			{
+				cout << "select an option" << endl;
+				for (int i = 0; i < options.size(); i++)
+					cout << "option: " << i << " " << options[i] << endl;
+
+
+				char ch = -1;
+				cin >> ch;
+				
+				if (ch >= '1' && ch <= '1'+ options.size())
+				{
+					int var = (int)ch - (int)'1';
+
+					int the_signal = options[var];
+
+					State* output = this;
+					Transition* temp = m_start;
+					while (temp)
+					{
+						output = temp->Fire_(the_signal);
+						if (output != this)
+							return output;
+						temp = temp->next;
+						if (temp == m_start)
+							break;
+					}
+					return output;
+				}
+				else
+				{
+					cout << "Select a valid otion " << endl;
+				}
+				
+				return MessageState::Process();
+
+			}
+
+			void AddOption(int newOption)
+			{
+				options.push_back(newOption);
+
+			}
+
+			vector<int> options;
+		};
+
+		class BalanceState : public TimedState
+		{
+		public:
+			BalanceState() : TimedState(VIEW_BALANCE)
+			{}
+			State* Process()
+			{
+				return TimedState::Process();
+			}
+		};
+
+
+		void RunTestCashMachine()
+		{
+			cout << endl;
+			cout << "****************************************************" << endl;
+
+			enum CASH_MACHINE_EVENTS {OPTION_SELECT_1, OPTION_SELECT_2, OPTION_SELECT_3 };
+			Signal s1(OPTION_SELECT_1);
+			Signal s2(OPTION_SELECT_2);
+			Signal s3(OPTION_SELECT_3);
+	
+
+			InputState start_state(OPTIONS);
+			start_state.AddOption(OPTION_SELECT_1); 
+			start_state.AddOption(OPTION_SELECT_2);
+			start_state.AddOption(OPTION_SELECT_3);
+			start_state.SetTimeout(10, &s3);
+
+			MessageState view_balance_state(VIEW_BALANCE);
+			view_balance_state.SetMessage("Your Balance Is 100000 kudos");
+			view_balance_state.SetTimeout(10, &s1);
+
+			InputState time_query_state(QUERY_MORE_TIME);
+			time_query_state.AddOption(OPTION_SELECT_1);
+			time_query_state.AddOption(OPTION_SELECT_2);
+			time_query_state.SetTimeout(10, &s3);
+
+			InputState other_transaction_query_state(QUERY_OTHER_TRANSACTION);
+			other_transaction_query_state.AddOption(OPTION_SELECT_1);
+			other_transaction_query_state.AddOption(OPTION_SELECT_2);
+			other_transaction_query_state.SetTimeout(10, &s3);
+
+			InputState select_quantity_state(SELECT_QUANTITY);
+			select_quantity_state.AddOption(OPTION_SELECT_1);
+			select_quantity_state.AddOption(OPTION_SELECT_2);
+			select_quantity_state.SetTimeout(10, &s2);
+
+			MessageState dispense_state(DISPENSE_MESSAGE);
+			dispense_state.SetMessage("dispensing your money");
+			view_balance_state.SetTimeout(2, &s1);
+			
+
+			InputState time_query2_state(MORE_TIME);
+			time_query2_state.AddOption(OPTION_SELECT_1);
+			time_query2_state.AddOption(OPTION_SELECT_2);
+			time_query2_state.SetTimeout(10, &s3);
+
+			MessageState take_card_state(TAKE_CARD);
+			dispense_state.SetMessage("please take your card");
+
+
+			start_state.AddTransition(&view_balance_state, &s1);
+			start_state.AddTransition(&select_quantity_state, &s2);
+			start_state.AddTransition(&take_card_state, &s3);
+
+			//time_query_state.AddTransition(&start_state, &s1);
+
+			view_balance_state.AddTransition(&other_transaction_query_state, &s1);
+
+			other_transaction_query_state.AddTransition(&start_state, &s1);
+			other_transaction_query_state.AddTransition(&take_card_state, &s2);
+
+			select_quantity_state.AddTransition(&dispense_state, &s1);
+
+		//	end_state.AddTransition(&middle_state, &s5);
+		//	end_state.AddTransition(&start_state, &s6);
+
+			StateMachine m;
+			m.SetStartState(&start_state);
+
+			Signal *state_events[3] = { &s1, &s2, &s3 };
+
+			char ch = 0;
+
+			Timer t;
+			t.Start();
+			double start_time = 0.0f;
+
+			while (ch != 'q')
+			{
+				//t.Update();
+				t.Stop();
+				double dt = t.GetTimeInSeconds();
+				cin >> ch;
+
+				TimedState* st = (TimedState*)m.GetCurrentState();
+				m.m_current_State = st->Tick(dt);
+
+				st->Process();
+
+
+				int i = (int)ch - (int)'1';
+
+				t.Reset();
+				t.Start();
+			}
+			
+
+		}
+
+		void RunTest()
+		{
+			cout << endl;
+			cout << "****************************************************" << endl;
+
+			StateImpl start_state(START_STATE);
+			StateImpl middle_state(MIDDLE_STATE);
+			StateImpl end_state(END_STATE);
+
+			Signal s1(EVENT_1);
+			Signal s2(EVENT_2);
+			Signal s3(EVENT_3);
+			Signal s4(EVENT_4);
+			Signal s5(EVENT_5);
+			Signal s6(EVENT_6);
+
+			start_state.AddTransition(&middle_state, &s1);
+			start_state.AddTransition(&end_state, &s2);
+
+			middle_state.AddTransition(&end_state, &s3);
+			middle_state.AddTransition(&start_state, &s4);
+
+			end_state.AddTransition(&middle_state, &s5);
+			end_state.AddTransition(&start_state, &s6);
+
+			StateMachine m;
+			m.SetStartState(&start_state);
+
+			Signal *state_events[6] = { &s1, &s2, &s3, &s4, &s5, &s6 };
+
+			char ch =0;
+
+			while (ch != 'q')
+			{
+				cin >> ch;
+
+				StateImpl* st = (StateImpl*)m.GetCurrentState();
+				st->Process();
+				
+				if (ch >= '1' && ch <= '6')
+				{
+					int i = (int)ch - (int)'1';
+					cout << "performing transition: " << string_events[i] << endl;
+					m.ProcessEvent(state_events[i]);
+				}
+
+			}
+		
+		}
+
+
+	};
+
+	namespace VECTOR_STATE_MACHINE
+	{
+		using namespace TEST_STATES;
+
+		class State;
+		class Transition;
+
+		class Signal
+		{
+		public:
+			Signal(int signal_id)
+			{
+				id = signal_id;
+			}
+			int id;
+		};
+
+		class Transition
+		{
+		public:
+			Transition(State *From, State *To, int signal)
+			{
+				from = From;
+				to = To;
+				signal_id = signal;
+			}
+
+			State* Fire_(Signal* signal)
+			{
+				if (signal_id == signal->id)
+				{
+					return to;
+				}
+
+				return from;
+			}
+
+			int signal_id;
+			State *from;
+			State *to;
+
+		};
+
+		class MessagePrint
+		{
+		public:
+			void PrintMessage()
+			{
+				for (string str : message_lines)
+				{
+					cout << str << endl;
+				}
+			}
+			MessagePrint* AddLine(string newline)
+			{
+				message_lines.push_back(newline);
+				return this;
+			}
+			vector<string> message_lines;
+		};
+
+		class InputProcessor
+		{
+		public:
+			void AddBinding(char c, Signal *s)
+			{
+				m_input_signal_map[c] = s;
+				user_inputs.push_back(c);
+			}
+
+			Signal* Process()
+			{
+
+				cout << endl;
+				cout << "Enter an option" << endl;
+				for (char a : user_inputs)
+				{
+					cout << a << endl;
+				}
+
+				char c = 0;
+				cin >> c;
+				for (char a : user_inputs)
+				{
+					if (a == c)
+					{
+						return m_input_signal_map[c];
+					}
+				}
+				
+				return 0;
+			}
+
+			vector< char > user_inputs;
+			unordered_map <char, Signal*> m_input_signal_map;
+		};
+
+		class StateProcessObject
+		{
+		public:
+			Signal* Process(bool needPrint){
+
+				if (!needPrint)
+					return 0;
+
+					
+				if (m_message)	
+				{
+
+					m_message->PrintMessage();
+				}
+
+				if (inputs)
+				{
+					Signal *s = inputs->Process();
+					if (s != 0)
+					{
+
+						return s;
+					}
+
+				}
+				
+
+
+
+				return 0;
+			}
+
+			StateProcessObject* AddTextLine(string line)
+			{
+				if (!m_message)
+					m_message = new MessagePrint();
+				
+				m_message->AddLine(line);
+				return this;
+
+			}
+
+			StateProcessObject* AddInputOption(char c, Signal *s)
+			{
+				if ( inputs == 0 )
+					inputs = new InputProcessor();
+
+				inputs->AddBinding(c, s);
+				return this;
+			}
+
+			StateProcessObject()
+			{
+
+			}
+			~StateProcessObject()
+			{
+				if (m_message)
+					delete m_message;
+				if (inputs)
+					delete inputs;
+			}
+
+			MessagePrint *m_message = 0;
+			InputProcessor *inputs = 0;
+
+
+			
+		};
+
+		class State
+		{
+		public:
+			int m_id = -1;
+
+			State(int id)
+			{
+				m_id = id;
+				m_stateProcessObject = new StateProcessObject;
+			}
+			~State()
+			{
+				delete m_stateProcessObject;
+			}
+			void OnActivate()
+			{
+			//	m_timer.Reset();
+			//	m_timer.Start();
+				total_time = 0.0;
+				needPrint = true;
+			}
+
+			void OnDeactivate()
+			{
+			//	m_timer.Update();
+				total_time = 0.0;
+				needPrint = false; 
+			//	m_timer.Stop();
+			//	m_timer.Reset();
+			}
+
+			bool needPrint = true;
+
+			State* Process(double dt)
+			{
+				total_time += dt;
+
+				
+
+				Signal *s = m_stateProcessObject->Process(needPrint);
+
+				if (needPrint)needPrint = false;
+				
+
+				if (timeout)
+				{
+					//m_timer.Update();
+					
+					
+					//double time_taken = m_timer.GetTimeDelta();
+					//cout << time_taken << endl;
+					if (total_time > m_stopTime)
+					{
+						return Activate(timeout);
+					}
+				}
+
+				if (s) return Activate(s);
+
+				return this;
+
+			}
+
+			StateProcessObject* AddMessageLine(string line)
+			{
+				m_stateProcessObject->AddTextLine(line);
+				return m_stateProcessObject;
+			}
+			void AddInputOption(char c, Signal* s)
+			{
+				m_stateProcessObject->AddInputOption(c, s);
+			}
+
+			State *Activate(Signal *c)
+			{
+				State* output = this;
+				for (const auto& l : m_tr_list) {
+					output = l->Fire_(c);
+					if (output != this)
+					{
+						output->OnActivate();
+						this->OnDeactivate();
+						return output;
+					}
+				}
+				
+				return this;
+			}
+
+			Transition* AddTransition(State* p, Signal *c)
+			{
+				Transition *pNewTransition = new Transition(this, p, c->id);
+				
+				m_tr_list.push_back(pNewTransition);
+
+				return pNewTransition;
+			}
+
+			void AddTimeout(double stopTime, State* timeoutState)
+			{
+				timeout = new Signal(-10000);
+				AddTransition(timeoutState, timeout);
+
+				m_stopTime = stopTime;
+
+			}
+
+			vector< Transition* > m_tr_list;
+			double m_stopTime = 0.0;
+			Signal *timeout = 0;
+			
+			double total_time;
+			
+
+			StateProcessObject *m_stateProcessObject;
+
+		};
+
+
+
+
+
+		class StateMachine
+		{
+		public:
+
+			void Process(double dt)
+			{
+				m_next_State = m_current_State->Process(dt);
+				if (m_next_State!= 0 && m_next_State != m_current_State)
+					m_current_State = m_next_State;
+				
+			}
+
+
+			State* ProcessEvent(Signal *evt)
+			{
+				//if (m_current_State >= 0 && m_current_State < m_states.size())
+				m_current_State = m_current_State->Activate(evt);
+
+				return m_current_State;
+			}
+			State* GetCurrentState()
+			{
+				return m_current_State;
+			}
+			void SetStartState(State* start)
+			{
+				m_current_State = start;
+			}
+
+			State* m_current_State = 0;
+			State* m_next_State = 0;
+			vector<State*> m_states;
+		};
+
+		void RunTest2()
+		{
+			enum TEST_STATES_2 { ENTER, FRONT_LEFT, FRONT_RIGHT, CENTER_MIDDLE, CENTER_LEFT, CENTER_RIGHT, END};
+			string state_names[7] = { "ENTER", "FRONT_LEFT", "FRONT_RIGHT", "CENTER_MIDDLE", "CENTER_LEFT", "CENTER_RIGHT", "END" };
+			Signal s1(1);
+			Signal s2(2);
+			Signal s3(3);
+			Signal s4(4);
+			Signal s5(5);
+			Signal s6(6);
+			Signal s7(7);
+			Signal s8(8);
+			Signal s9(9);
+			Signal s10(10);
+
+			State enter(ENTER);
+			State front_left(FRONT_LEFT);
+			State front_right(FRONT_RIGHT);
+			State center_middle(CENTER_MIDDLE);
+			State center_left(CENTER_LEFT);
+			State center_right(CENTER_RIGHT);
+			State end(END);
+
+			enter.AddTransition(&front_left, &s1);
+			enter.AddTransition(&front_right, &s2);
+			enter.AddMessageLine("This is the entrance");
+			enter.AddMessageLine("Select A Path, LEFT or RIGHT");
+			enter.AddInputOption('1', &s1);
+			enter.AddInputOption('2', &s2);
+
+			front_left.AddTransition(&center_middle, &s3);
+			front_left.AddTransition(&center_left, &s4);
+			front_left.AddMessageLine("This is the front left");
+			front_left.AddMessageLine("Select a Path, CENTER_MIDDLE or CENTER_LEFT");
+			front_left.AddInputOption('1', &s3);
+			front_left.AddInputOption('2', &s4);
+			front_left.AddTimeout(5, &enter);
+
+			//front_right.AddTransition(&center_right, &s5);
+			front_right.AddMessageLine("Heading to next state after 10 seconds");
+			front_right.AddTimeout(10, &center_right);
+
+			
+			center_left.AddMessageLine("This is a dead end.");
+			center_left.AddMessageLine("Heading to front_left after 10 seconds");
+			center_left.AddTimeout(10, &front_left);
+
+			
+			center_middle.AddTransition(&end, &s6);
+			center_middle.AddMessageLine("This is center middle");
+			center_middle.AddMessageLine("Heading to front_left after 10 seconds");
+			center_middle.AddMessageLine("Select a Path, end or wait");
+			center_middle.AddInputOption('1', &s6);
+			center_middle.AddInputOption('2', &s1);
+			center_middle.AddTimeout(10, &front_left);
+
+			center_right.AddMessageLine("You found the gold.");
+			center_right.AddMessageLine("Heading to end after 10 seconds");
+			center_right.AddTimeout(10, &end);
+
+			end.AddTimeout(4, &enter);
+			end.AddMessageLine("This is the end, heading back to start");
+
+			StateMachine m;
+			m.SetStartState(&enter);
+
+			char c = 0;
+
+			Timer m_timer;
+
+			double total_time = 0.0;
+
+			double time_delta = 0.0;
+			m_timer.Start();
+			time_delta = m_timer.Update();
+
+			total_time += time_delta;
+
+			while (m.GetCurrentState()!= &end)
+			{
+				time_delta = m_timer.Update();
+				total_time += time_delta;
+				//cout << "Current State: " << total_time << endl;// state_names[m.GetCurrentState()->m_id] << endl;
+				m.Process(time_delta);
+			}
+			
+			
+		}
+
+		void RunTest()
+		{
+			cout << endl;
+			cout << "****************************************************" << endl;
+
+			State start_state(START_STATE);
+			State middle_state(MIDDLE_STATE);
+			State end_state(END_STATE);
+
+			Signal s1(EVENT_1);
+			Signal s2(EVENT_2);
+			Signal s3(EVENT_3);
+			Signal s4(EVENT_4);
+			Signal s5(EVENT_5);
+			Signal s6(EVENT_6);
+
+			start_state.AddTransition(&middle_state, &s1);
+			start_state.AddTransition(&end_state, &s2);
+
+			middle_state.AddTransition(&end_state, &s3);
+			middle_state.AddTransition(&start_state, &s4);
+
+			end_state.AddTransition(&middle_state, &s5);
+			end_state.AddTransition(&start_state, &s6);
+
+			StateMachine m;
+			m.SetStartState(&start_state);
+
+			Signal *state_events[6] = { &s1, &s2, &s3, &s4, &s5, &s6 };
+
+
+			for (int i = 0; i < 7; i++)
+			{
+				cout << "State machine current state:   ";
+				State* st = m.GetCurrentState();
+
+				switch (STATES(st->m_id))
+				{
+				case STATES::START_STATE:
+					cout << "START_STATE" << endl;
+					break;
+				case STATES::MIDDLE_STATE:
+					cout << "MIDDLE_STATE" << endl;
+					break;
+				case STATES::END_STATE:
+					cout << "END_STATE" << endl;
+					break;
+				default:
+					break;
+				};
+				cout << "performing transition: " << string_events[transitions[i]] << endl;
+				st = m.ProcessEvent(state_events[transitions[i]]);
+				//state_machine.stateTransition(transitions[i]);
+			}
+		}
+
+	}
 };
 
 
@@ -1332,6 +2112,10 @@ int main(int argc, char** argv)
 	STATE_MACHINE::LINKED_STATE_MACHINE::RunTest();
 
 	STATE_MACHINE::LINKED_STATE_MACHINE_VERSION_2::RunTest();
+
+//	STATE_MACHINE::LINKED_STATE_MACHINE_PROCESSOR::RunTestCashMachine();
+
+	STATE_MACHINE::VECTOR_STATE_MACHINE::RunTest2();
 	return 0;
 }
 
