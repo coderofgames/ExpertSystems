@@ -10,6 +10,7 @@
 #include <thread>
 #include <future> 
 #include <mutex>
+#include <chrono>
 #include <functional>
 #include <conio.h>
 
@@ -935,16 +936,8 @@ namespace STATE_MACHINE
 	};
 
 
-
-	namespace VECTOR_STATE_MACHINE
+	namespace STATE_THREAD_TIMER
 	{
-		using namespace TEST_STATES;
-
-		class State;
-		class Transition;
-
-#include <chrono>
-
 		// stack overflow
 		//http://stackoverflow.com/questions/32693103/threaded-timer-interrupting-a-sleep-stopping-it
 		class ThreadTimer
@@ -1008,11 +1001,10 @@ namespace STATE_MACHINE
 			std::mutex mutex;
 			std::condition_variable terminate;
 		};
+	};
 
-
-
-
-
+	namespace STATE_SIGNAL
+	{
 		class Signal
 		{
 		public:
@@ -1022,18 +1014,46 @@ namespace STATE_MACHINE
 			}
 			int id;
 		};
+	};
+
+	namespace BASE_STATE
+	{
+		class BaseState
+		{
+		public:
+			int m_id = -1;
+
+			BaseState(int id)
+			{
+				m_id = id;
+			}
+
+			~BaseState()
+			{
+
+			}
+
+			virtual void OnActivate() = 0;
+
+			virtual void OnDeactivate() = 0;
+		};
+	};
+	namespace STATE_TRANSITION
+	{
+		using namespace BASE_STATE;
+		using namespace STATE_SIGNAL;
 
 		class Transition
 		{
 		public:
-			Transition(State *From, State *To, int signal)
+			Transition(BaseState *From, BaseState *To, int signal)
 			{
 				from = From;
 				to = To;
 				signal_id = signal;
 			}
 
-			State* Fire_(Signal* signal)
+			BaseState* Fire_(Signal* signal)
 			{
 				if (signal_id == signal->id)
 				{
@@ -1044,11 +1064,85 @@ namespace STATE_MACHINE
 			}
 
 			int signal_id;
-			State *from;
-			State *to;
+			BaseState *from;
+			BaseState *to;
 
 		};
+	};
 
+	namespace STATE
+	{
+		using namespace BASE_STATE;
+		using namespace STATE_SIGNAL;
+
+		class State : public BaseState
+		{
+		public:
+			State(int id) : BaseState(id)
+			{}
+			~State(){}
+
+			BaseState *Activate(Signal *c)
+			{
+				BaseState* output = this;
+				for (const auto& l : m_tr_list) {
+					output = l->Fire_(c);
+					if (output != this)
+					{
+						this->OnDeactivate();
+						output->OnActivate();
+
+						return output;
+					}
+				}
+
+				return this;
+			}
+
+
+
+			STATE_TRANSITION::Transition* AddTransition(BaseState* p, Signal *c)
+			{
+				STATE_TRANSITION::Transition *pNewTransition = new STATE_TRANSITION::Transition(this, p, c->id);
+
+				m_tr_list.push_back(pNewTransition);
+
+				return pNewTransition;
+			}
+
+			vector< STATE_TRANSITION::Transition* > m_tr_list;
+		};
+	};
+
+	namespace BASE_INPUT_PROCESSOR
+	{
+		class BaseInputProcessor
+		{
+		public:
+		};
+	};
+
+	namespace STATE_PROCESS_OBJECT
+	{
+		using namespace STATE_SIGNAL;
+		using namespace BASE_INPUT_PROCESSOR;
+
+		class StateProcessObject
+		{
+		public:
+			virtual Signal* Process(bool needPrint) = 0;
+			virtual void SetHitKey(bool val) = 0;
+			virtual bool HasInput() = 0;
+			virtual BASE_INPUT_PROCESSOR::BaseInputProcessor *GetInputProcessor() = 0;
+		};
+	};
+
+
+
+
+
+	namespace MESSAGE_CONSOLE_PRINTER
+	{
 		class MessagePrint
 		{
 		public:
@@ -1066,11 +1160,37 @@ namespace STATE_MACHINE
 			}
 			vector<string> message_lines;
 		};
+	};
+
+
+	namespace VECTOR_STATE_MACHINE
+	{
+		using namespace TEST_STATES;
+		using namespace STATE_THREAD_TIMER;
+		using namespace MESSAGE_CONSOLE_PRINTER;
+		using namespace BASE_STATE;
+		using namespace STATE;
+		using namespace STATE_SIGNAL;
+		using namespace STATE_TRANSITION;
+		using namespace STATE_PROCESS_OBJECT;
+		using namespace BASE_INPUT_PROCESSOR;
+
+		class State;
+		class Transition;
+
+
+
+
+
+
+
+
+
 
 		
 		
 
-		class InputProcessor
+		class InputProcessor : public BaseInputProcessor
 		{
 		public:
 			std::mutex m_mut;
@@ -1086,29 +1206,22 @@ namespace STATE_MACHINE
 				m_input_text_map[c] = text;
 			}
 
-
-
 			Signal*  GetInput()
 			{
 				static int delay = 0;
 				char c = 0;
-				
-				//cin >> c;
+
 				if (delay == 0)
 				{
-			
-
 					for (char a : user_inputs)
 					{
-						
 						unsigned short key_state = GetKeyState((unsigned short)a);
 
-						if ((key_state & 0xff) && key_state >> 8)
+						// LOW BIT _____________________HI BIT
+						if ((key_state & 0xff) && (key_state >> 8))
 						{
 							delay++;
 							return  m_input_signal_map[a];
-							
-
 						}
 					}
 				}
@@ -1129,27 +1242,24 @@ namespace STATE_MACHINE
 
 			Signal* Process(bool needPrint)
 			{
-				//cout << endl;c
-				//cout << "Enter an option" << endl;
 				if (needPrint)
 				{
-				for (char a : user_inputs)
-				{
-					if (m_input_text_map.bucket_count()!=0)
-						cout << a << ": " << m_input_text_map[a] << endl;
-					else
+					for (char a : user_inputs)
 					{
-						cout << a << endl;
+						if (m_input_text_map.bucket_count() != 0)
+						{
+							cout << a << ": " << m_input_text_map[a] << endl;
+						}
+						else
+						{
+							cout << a << endl;
+						}
 					}
-				}
 				}
 				Signal* s = 0;
 				
 				//future<Signal*> f1 = async( &VECTOR_STATE_MACHINE::InputProcessor::GetInput, this);
 				return GetInput();
-
-				//return (Signal*)f2.get();
-
 			}
 
 			vector< char > user_inputs;
@@ -1157,12 +1267,7 @@ namespace STATE_MACHINE
 			unordered_map <char, string> m_input_text_map;
 		};
 
-		class StateProcessObject
-		{
-		public:
-			virtual Signal* Process(bool needPrint) = 0;
-			virtual void SetHitKey(bool val) = 0;
-		};
+
 
 		class StateProcessImpl : public StateProcessObject
 		{
@@ -1189,6 +1294,9 @@ namespace STATE_MACHINE
 				
 				return 0;
 			}
+
+			bool HasInput(){ return inputs != 0; }
+			BASE_INPUT_PROCESSOR::BaseInputProcessor *GetInputProcessor(){ return (BaseInputProcessor*)inputs; }
 
 			StateProcessObject* AddTextLine(string line)
 			{
@@ -1241,27 +1349,27 @@ namespace STATE_MACHINE
 			
 		};
 
-		class State
+		class StateImpl : public STATE::State
 		{
 		public:
-			int m_id = -1;
 
-			State(int id)
+
+			StateImpl(int id) : STATE::State(id)
 			{
-				m_id = id;
-				
-			}
-			~State()
-			{
-				
+
 			}
 
-			void SetStateProcessObject(StateProcessObject* obj)
+			~StateImpl()
+			{
+				
+			}
+
+			void SetStateProcessObject(StateProcessImpl* obj)
 			{
 				this->m_stateProcessObject = obj;
 			}
 
-			StateProcessObject *GetStateProcessObject()
+			StateProcessImpl *GetStateProcessObject()
 			{
 				return m_stateProcessObject;
 			}
@@ -1274,7 +1382,7 @@ namespace STATE_MACHINE
 				if (timeout)
 				{ 
 					timer = std::make_unique<ThreadTimer>();
-					timer->Start(std::chrono::milliseconds((long long)m_stopTime), std::bind(&State::Callback, this));
+					timer->Start(std::chrono::milliseconds((long long)m_stopTime), std::bind(&StateImpl::Callback, this));
 				}
 			}
 
@@ -1288,7 +1396,7 @@ namespace STATE_MACHINE
 
 			bool needPrint = true;
 
-			State* Process()
+			BaseState* Process()
 			{
 				Signal *s = 0;
 				
@@ -1315,32 +1423,6 @@ namespace STATE_MACHINE
 			}
 
 
-
-			State *Activate(Signal *c)
-			{
-				State* output = this;
-				for (const auto& l : m_tr_list) {
-					output = l->Fire_(c);
-					if (output != this)
-					{
-						this->OnDeactivate();
-						output->OnActivate();
-						
-						return output;
-					}
-				}
-				
-				return this;
-			}
-
-			Transition* AddTransition(State* p, Signal *c)
-			{
-				Transition *pNewTransition = new Transition(this, p, c->id);
-				m_tr_list.push_back(pNewTransition);
-
-				return pNewTransition;
-			}
-
 			void AddTimeout(double stopTime, State* timeoutState)
 			{
 				timeout = new Signal(-10000);
@@ -1356,7 +1438,7 @@ namespace STATE_MACHINE
 
 			std::unique_ptr<ThreadTimer>  timer;// = 0;
 
-			vector< Transition* > m_tr_list;
+	
 			double m_stopTime = 0.0;
 			Signal *timeout = 0;
 			
@@ -1364,12 +1446,9 @@ namespace STATE_MACHINE
 			bool bActivateTimeout = false;
 			
 
-			StateProcessObject *m_stateProcessObject =0;
+			StateProcessImpl *m_stateProcessObject = 0;
 
 		};
-
-
-
 
 
 		class StateMachine
@@ -1383,7 +1462,7 @@ namespace STATE_MACHINE
 
 			void Process(double dt)
 			{
-				m_next_State = m_current_State->Process();
+				m_next_State = (StateImpl*)m_current_State->Process();
 				if (m_next_State != 0 && m_next_State != m_current_State)
 				{
 					m_current_State = m_next_State;
@@ -1391,23 +1470,23 @@ namespace STATE_MACHINE
 			}
 
 
-			State* ProcessEvent(Signal *evt)
+			StateImpl* ProcessEvent(Signal *evt)
 			{
-				m_current_State = m_current_State->Activate(evt);
+				m_current_State = (StateImpl*)m_current_State->Activate(evt);
 
 				return m_current_State;
 			}
-			State* GetCurrentState()
+			StateImpl* GetCurrentState()
 			{
 				return m_current_State;
 			}
-			void SetStartState(State* start)
+			void SetStartState(StateImpl* start)
 			{
 				m_current_State = start;
 			}
 
-			State* m_current_State = 0;
-			State* m_next_State = 0;
+			StateImpl* m_current_State = 0;
+			StateImpl* m_next_State = 0;
 		};
 
 
@@ -1417,9 +1496,9 @@ namespace STATE_MACHINE
 			cout << endl;
 			cout << "****************************************************" << endl;
 
-			State start_state(START_STATE);
-			State middle_state(MIDDLE_STATE);
-			State end_state(END_STATE);
+			StateImpl start_state(START_STATE);
+			StateImpl middle_state(MIDDLE_STATE);
+			StateImpl end_state(END_STATE);
 
 			Signal s1(EVENT_1);
 			Signal s2(EVENT_2);
@@ -1446,7 +1525,7 @@ namespace STATE_MACHINE
 			for (int i = 0; i < 7; i++)
 			{
 				cout << "State machine current state:   ";
-				State* st = m.GetCurrentState();
+				StateImpl* st = m.GetCurrentState();
 
 				switch (STATES(st->m_id))
 				{
@@ -1507,18 +1586,18 @@ namespace STATE_MACHINE
 			Signal s9(9);
 			Signal s10(10);
 
-			State select_option(SELECT_OPTION);
-			State view_balance(VIEW_BALANCE);
-			State withdraw_cash(WITHDRAW_CASH);
-			State print_statement(PRINT_STATEMENT);
-			State more_time(MORE_TIME);
-			State more_time_withdraw(MORE_TIME_WITHDRAW);
-			State another_service(ANOTHER_SERVICE);
-			State emit_10(EMIT_10);
-			State emit_20(EMIT_20);
-			State emit_50(EMIT_50);
-			State emit_other(EMIT_OTHER);
-			State return_card(RETURN_CARD);
+			StateImpl select_option(SELECT_OPTION);
+			StateImpl view_balance(VIEW_BALANCE);
+			StateImpl withdraw_cash(WITHDRAW_CASH);
+			StateImpl print_statement(PRINT_STATEMENT);
+			StateImpl more_time(MORE_TIME);
+			StateImpl more_time_withdraw(MORE_TIME_WITHDRAW);
+			StateImpl another_service(ANOTHER_SERVICE);
+			StateImpl emit_10(EMIT_10);
+			StateImpl emit_20(EMIT_20);
+			StateImpl emit_50(EMIT_50);
+			StateImpl emit_other(EMIT_OTHER);
+			StateImpl return_card(RETURN_CARD);
 
 			select_option.AddTransition(&view_balance, &s1);
 			select_option.AddTransition(&withdraw_cash, &s2);
@@ -1528,7 +1607,7 @@ namespace STATE_MACHINE
 			select_option_obj.AddInputOption('1', &s1, "View Balance");
 			select_option_obj.AddInputOption('2', &s2, "Withdraw Cash");
 			select_option_obj.AddInputOption('3', &s3, "Print Statement");
-			select_option.SetStateProcessObject((StateProcessObject*)&select_option_obj);
+			select_option.SetStateProcessObject(&select_option_obj);
 			select_option.AddTimeout(5000, &more_time);
 
 			more_time.AddTransition(&select_option, &s3);
@@ -1537,7 +1616,7 @@ namespace STATE_MACHINE
 			more_time_obj.AddTextLine("Would you like More Time? ");
 			more_time_obj.AddInputOption('1', &s3, "yes");
 			more_time_obj.AddInputOption('2', &s4, "no");
-			more_time.SetStateProcessObject((StateProcessObject*)&more_time_obj);
+			more_time.SetStateProcessObject(&more_time_obj);
 
 			more_time_withdraw.AddTransition(&withdraw_cash, &s3);
 			more_time_withdraw.AddTransition(&return_card, &s4);
@@ -1545,7 +1624,7 @@ namespace STATE_MACHINE
 			more_time_withdraw_obj.AddTextLine("Would you like More Time? ");
 			more_time_withdraw_obj.AddInputOption('1', &s3, "yes");
 			more_time_withdraw_obj.AddInputOption('2', &s4, "no");
-			more_time_withdraw.SetStateProcessObject((StateProcessObject*)&more_time_withdraw_obj);
+			more_time_withdraw.SetStateProcessObject(&more_time_withdraw_obj);
 
 			view_balance.AddTransition(&select_option, &s3);
 			view_balance.AddTransition(&return_card, &s4);
@@ -1554,7 +1633,7 @@ namespace STATE_MACHINE
 			view_balance_obj.AddTextLine("Would you like another service? ");
 			view_balance_obj.AddInputOption('1', &s3, "yes");
 			view_balance_obj.AddInputOption('2', &s4, "no");
-			view_balance.SetStateProcessObject((StateProcessObject*)&view_balance_obj);
+			view_balance.SetStateProcessObject(&view_balance_obj);
 			//front_left.AddTimeout(5, &enter);
 
 			print_statement.AddTransition(&select_option, &s3);
@@ -1564,13 +1643,13 @@ namespace STATE_MACHINE
 			print_statement_obj.AddTextLine("Would you like another service? ");
 			print_statement_obj.AddInputOption('1', &s3, "yes");
 			print_statement_obj.AddInputOption('2', &s4, "no");
-			print_statement.SetStateProcessObject((StateProcessObject*)&print_statement_obj);
+			print_statement.SetStateProcessObject(&print_statement_obj);
 
 			//front_right.AddTransition(&center_right, &s5);
 			StateProcessImpl return_card_obj;
 			return_card_obj.AddTextLine("Please take your card!");
 			return_card_obj.AddTextLine("have a great day!");
-			return_card.SetStateProcessObject((StateProcessObject*)&return_card_obj);
+			return_card.SetStateProcessObject(&return_card_obj);
 			
 			
 			withdraw_cash.AddTransition(&emit_10, &s3);
@@ -1585,53 +1664,39 @@ namespace STATE_MACHINE
 			withdraw_cash_obj.AddInputOption('3', &s5, "\x9C 50 ");
 			withdraw_cash_obj.AddInputOption('4', &s6, "other");
 			withdraw_cash_obj.AddInputOption('5', &s7, "return card");
-			withdraw_cash.SetStateProcessObject((StateProcessObject*)&withdraw_cash_obj);
+			withdraw_cash.SetStateProcessObject(&withdraw_cash_obj);
 			withdraw_cash.AddTimeout(5000, &more_time_withdraw);
 
 			StateProcessImpl emit_10_obj;
 			emit_10_obj.AddTextLine("Machine Emits 10");
-			emit_10.SetStateProcessObject((StateProcessObject*)&emit_10_obj);
+			emit_10.SetStateProcessObject(&emit_10_obj);
 			emit_10.AddTimeout(4000, &return_card);
 
 			StateProcessImpl emit_20_obj;
 			emit_20_obj.AddTextLine("Machine Emits 20");
-			emit_20.SetStateProcessObject((StateProcessObject*)&emit_20_obj);
+			emit_20.SetStateProcessObject(&emit_20_obj);
 			emit_20.AddTimeout(4000, &return_card);
 
 			StateProcessImpl emit_50_obj;
 			emit_50_obj.AddTextLine("Machine Emits 50");
-			emit_50.SetStateProcessObject((StateProcessObject*)&emit_50_obj);
+			emit_50.SetStateProcessObject(&emit_50_obj);
 			emit_50.AddTimeout(4000, &return_card);
 
 			StateProcessImpl emit_other_obj;
 			emit_other_obj.AddTextLine("Machine Emits other");
 			emit_other_obj.AddTextLine("todo ... ");
-			emit_other.SetStateProcessObject((StateProcessObject*)&emit_other_obj);
+			emit_other.SetStateProcessObject(&emit_other_obj);
 			emit_other.AddTimeout(4000, &return_card);
 			
-
-
-		
 
 			StateMachine m;
 			m.SetStartState(&select_option);
 
 			char c = 0;
 
-
-
-			
-
-			//system("cls");
-
 			while ( m.GetCurrentState() != &return_card)
 			{
-
-				/* Use _getch to throw key away. */
-				//printf("\nKey struck was '%c'\n", _getch());
-				//cout << "Current State: " << total_time << endl;// state_names[m.GetCurrentState()->m_id] << endl;
 				m.Process(0.1);
-
 			}
 			m.Process(0.1);
 
@@ -1639,144 +1704,28 @@ namespace STATE_MACHINE
 	};
 
 
-#include <thread>
-#include <future>
-#include <chrono>
 
 	namespace VECTOR_STATE_MACHINE_2
 	{
 		using namespace TEST_STATES;
+		using namespace STATE_THREAD_TIMER;
+		using namespace MESSAGE_CONSOLE_PRINTER;
+		using namespace STATE_PROCESS_OBJECT;
+		using namespace BASE_STATE;
+		using namespace STATE;
+		using namespace STATE_SIGNAL;
+		using namespace STATE_TRANSITION;
+		using namespace BASE_INPUT_PROCESSOR;
 
 		class State;
 		class Transition;
 
-
-
-
-		// stack overflow
-		//http://stackoverflow.com/questions/32693103/threaded-timer-interrupting-a-sleep-stopping-it
-		class ThreadTimer
-		{
-		public:
-
-			ThreadTimer() {}
-
-			~ThreadTimer()
-			{
-				Stop();
-			}
-
-			void Start(std::chrono::milliseconds const & interval,
-				std::function<void(void)> const & callback)
-			{
-				Stop();
-
-				{
-					auto locked = std::unique_lock<std::mutex>(mutex);
-					stop = false;
-				}
-
-				thread = std::thread([=]()
-				{
-					auto locked = std::unique_lock<std::mutex>(mutex);
-
-					while (!stop) // We hold the mutex that protects stop
-					{
-						auto result = terminate.wait_for(locked, interval);
-
-						if (result == std::cv_status::timeout)
-						{
-							callback();
-						}
-					}
-				});
-			}
-
-			void Stop()
-			{
-				{
-					// Set the predicate
-					auto locked = std::unique_lock<std::mutex>(mutex);
-					stop = true;
-				}
-
-				// Tell the thread the predicate has changed
-				terminate.notify_one();
-
-				if (thread.joinable())
-				{
-					thread.join();
-				}
-			}
-
-		private:
-
-			bool stop; // This is the thing the thread is waiting for
-			std::thread thread;
-			std::mutex mutex;
-			std::condition_variable terminate;
-		};
-
-
-
-		class Signal
-		{
-		public:
-			Signal(int signal_id)
-			{
-				id = signal_id;
-			}
-			int id;
-		};
-
-		class Transition
-		{
-		public:
-			Transition(State *From, State *To, int signal)
-			{
-				from = From;
-				to = To;
-				signal_id = signal;
-			}
-
-			State* Fire_(Signal* signal)
-			{
-				if (signal_id == signal->id)
-				{
-					return to;
-				}
-
-				return from;
-			}
-
-			int signal_id;
-			State *from;
-			State *to;
-
-		};
-
-		class MessagePrint
-		{
-		public:
-			void PrintMessage()
-			{
-				for (string str : message_lines)
-				{
-					cout << str << endl;
-				}
-			}
-			MessagePrint* AddLine(string newline)
-			{
-				message_lines.push_back(newline);
-				return this;
-			}
-			vector<string> message_lines;
-		};
+	
 
 
 
 
-		class InputProcessor
+		class InputProcessor : public BaseInputProcessor
 		{
 		public:
 			std::mutex m_mut;
@@ -1793,8 +1742,6 @@ namespace STATE_MACHINE
 			}
 
 
-			
-
 			Signal*  GetInput()
 			{
 				if (keyHit == 0)
@@ -1806,23 +1753,26 @@ namespace STATE_MACHINE
 						if (a == keyHit)
 						{
 							return  m_input_signal_map[a];
-
 						}
 					}
 				}
 				return 0;
 			}
 
-			char keyHit = 0;
-			void SetHitKey(char val)
+			char key = 0;
+			void SetHitKeyChar(char val)
+			{
+				key = val;
+			}
+
+			bool keyHit = false;
+			void SetHitKey(bool val)
 			{
 				keyHit = val;
 			}
 
 			Signal* Process(bool needPrint)
 			{
-				//cout << endl;c
-				//cout << "Enter an option" << endl;
 				if (needPrint)
 				{ 
 					for (char a : user_inputs)
@@ -1835,13 +1785,8 @@ namespace STATE_MACHINE
 						}
 					}
 				}
-				Signal* s = 0;
-
 				//future<Signal*> f1 = async( &VECTOR_STATE_MACHINE::InputProcessor::GetInput, this);
 				return 0;
-
-				//return (Signal*)f2.get();
-
 			}
 
 			vector< char > user_inputs;
@@ -1849,16 +1794,7 @@ namespace STATE_MACHINE
 			unordered_map <char, string> m_input_text_map;
 		};
 
-		class StateProcessObject
-		{
-		public:
-			virtual Signal* Process(bool needPrint) = 0;
-			virtual void SetHitKey(char val) = 0;
-			virtual bool HasInput() = 0;
-			virtual InputProcessor *GetInputProcessor() = 0;
-			
-			
-		};
+
 
 		class StateProcessImpl : public StateProcessObject
 		{
@@ -1887,8 +1823,8 @@ namespace STATE_MACHINE
 				return 0;
 			}
 
-			InputProcessor *GetInputProcessor(){
-				return inputs;
+			BASE_INPUT_PROCESSOR::BaseInputProcessor *GetInputProcessor(){
+				return (BaseInputProcessor*)inputs;
 			}
 
 			bool HasInput(){ return inputs != 0; }
@@ -1920,7 +1856,12 @@ namespace STATE_MACHINE
 				return (StateProcessObject*)this;
 			}
 
-			void SetHitKey(char val)
+			void SetHitKeyChar(char val)
+			{
+				if (inputs) inputs->SetHitKey(val);
+			}
+
+			void SetHitKey(bool val)
 			{
 				if (inputs) inputs->SetHitKey(val);
 			}
@@ -1944,27 +1885,25 @@ namespace STATE_MACHINE
 
 		};
 
-		class State
+		class StateImpl : public STATE::State
 		{
 		public:
-			int m_id = -1;
 
-			State(int id)
+			StateImpl(int id) : STATE::State(id)
 			{
-				m_id = id;
-
 			}
-			~State()
+
+			~StateImpl()
 			{
 
 			}
 
-			void SetStateProcessObject(StateProcessObject* obj)
+			void SetStateProcessObject(StateProcessImpl* obj)
 			{
 				this->m_stateProcessObject = obj;
 			}
 
-			StateProcessObject *GetStateProcessObject()
+			StateProcessImpl *GetStateProcessObject()
 			{
 				return m_stateProcessObject;
 			}
@@ -1972,23 +1911,21 @@ namespace STATE_MACHINE
 			void OnActivate()
 			{
 				bActivateTimeout = false;
-				total_time = 0.0;
 				needPrint = true;
 
 			}
 
 			void OnDeactivate()
 			{
-				total_time = 0.0;
 				needPrint = false;
 			}
 
+
 			bool needPrint = true;
 
-			State* Process(double dt)
-			{
-				total_time += dt;
 
+			BaseState* Process()
+			{
 				Signal *s = 0;
 
 				if (m_stateProcessObject)
@@ -2011,37 +1948,8 @@ namespace STATE_MACHINE
 			}
 
 
-
-			State *Activate(Signal *c)
-			{
-				State* output = this;
-				for (const auto& l : m_tr_list) {
-					output = l->Fire_(c);
-					if (output != this)
-					{
-						this->OnDeactivate();
-						output->OnActivate();
-
-						return output;
-					}
-				}
-
-				return this;
-			}
-
-			Transition* AddTransition(State* p, Signal *c)
-			{
-				Transition *pNewTransition = new Transition(this, p, c->id);
-
-				m_tr_list.push_back(pNewTransition);
-
-				return pNewTransition;
-			}
-
 			void AddTimeout(double stopTime, State* timeoutState)
 			{
-
-
 				timeout = new Signal(-10000);
 				AddTransition(timeoutState, timeout);
 
@@ -2052,14 +1960,9 @@ namespace STATE_MACHINE
 			void Callback()
 			{
 				bActivateTimeout = true;
-
-
-
 			}
 
-		//	std::unique_ptr<ThreadTimer>  timer;// = 0;
-
-			vector< Transition* > m_tr_list;
+			
 			double m_stopTime = 0.0;
 			Signal *timeout = 0;
 
@@ -2067,7 +1970,7 @@ namespace STATE_MACHINE
 			bool bActivateTimeout = false;
 
 
-			StateProcessObject *m_stateProcessObject = 0;
+			StateProcessImpl *m_stateProcessObject = 0;
 
 		};
 
@@ -2078,50 +1981,40 @@ namespace STATE_MACHINE
 		class StateMachine
 		{
 		public:
-			Timer m_timer;
-
-			double total_time = 0.0;
-
-			double time_delta = 0.0;
 
 			StateMachine()
 			{
-				m_timer.Start();
-
 			}
 
-			void Process(double dt)
+			void Process()
 			{
-				time_delta = m_timer.Update();
-				total_time += time_delta;
-				m_next_State = m_current_State->Process(time_delta);
+				m_next_State = (StateImpl*)m_current_State->Process();
 				if (m_next_State != 0 && m_next_State != m_current_State)
 				{
-					m_timer.Reset();
 					m_current_State = m_next_State;
 				}
 			}
 
 
-			State* ProcessEvent(Signal *evt)
+			StateImpl* ProcessEvent(Signal *evt)
 			{
 				//if (m_current_State >= 0 && m_current_State < m_states.size())
-				m_current_State = m_current_State->Activate(evt);
+				m_current_State = (StateImpl*)m_current_State->Activate(evt);
 
 				return m_current_State;
 			}
-			State* GetCurrentState()
+			StateImpl* GetCurrentState()
 			{
 				return m_current_State;
 			}
-			void SetStartState(State* start)
+			void SetStartState(StateImpl* start)
 			{
 				m_current_State = start;
 			}
 
-			State* m_current_State = 0;
-			State* m_next_State = 0;
-			vector<State*> m_states;
+			StateImpl* m_current_State = 0;
+			StateImpl* m_next_State = 0;
+			vector<StateImpl*> m_states;
 		};
 
 
@@ -2131,9 +2024,9 @@ namespace STATE_MACHINE
 			cout << endl;
 			cout << "****************************************************" << endl;
 
-			State start_state(START_STATE);
-			State middle_state(MIDDLE_STATE);
-			State end_state(END_STATE);
+			StateImpl start_state(START_STATE);
+			StateImpl middle_state(MIDDLE_STATE);
+			StateImpl end_state(END_STATE);
 
 			Signal s1(EVENT_1);
 			Signal s2(EVENT_2);
@@ -2160,7 +2053,7 @@ namespace STATE_MACHINE
 			for (int i = 0; i < 7; i++)
 			{
 				cout << "State machine current state:   ";
-				State* st = m.GetCurrentState();
+				StateImpl* st = m.GetCurrentState();
 
 				switch (STATES(st->m_id))
 				{
@@ -2182,14 +2075,24 @@ namespace STATE_MACHINE
 			}
 		}
 
+		void RunKeyStateTest()
+		{
+			enum KEY_STATES { E_KEY_UP, E_KEY_DOWN };
+			StateImpl key_up(E_KEY_UP);
+
+		}
+
 		char get_input(const std::atomic_bool& cancelled)
 		{
 			
 			char c = 0;
-			if (std::cin.get(c) || cancelled)
+			/*while (c == 0 && !cancelled)
 			{
-
-
+				c = _getch();
+			}*/
+			// this does not cancel because cin >> is waiting after the thread finishes
+			if (std::cin.get(c) || cancelled) 
+			{
 				return c;
 			}
 			return c;
@@ -2236,18 +2139,18 @@ namespace STATE_MACHINE
 			Signal s9(9);
 			Signal s10(10);
 
-			State select_option(SELECT_OPTION);
-			State view_balance(VIEW_BALANCE);
-			State withdraw_cash(WITHDRAW_CASH);
-			State print_statement(PRINT_STATEMENT);
-			State more_time(MORE_TIME);
-			State more_time_withdraw(MORE_TIME_WITHDRAW);
-			State another_service(ANOTHER_SERVICE);
-			State emit_10(EMIT_10);
-			State emit_20(EMIT_20);
-			State emit_50(EMIT_50);
-			State emit_other(EMIT_OTHER);
-			State return_card(RETURN_CARD);
+			StateImpl select_option(SELECT_OPTION);
+			StateImpl view_balance(VIEW_BALANCE);
+			StateImpl withdraw_cash(WITHDRAW_CASH);
+			StateImpl print_statement(PRINT_STATEMENT);
+			StateImpl more_time(MORE_TIME);
+			StateImpl more_time_withdraw(MORE_TIME_WITHDRAW);
+			StateImpl another_service(ANOTHER_SERVICE);
+			StateImpl emit_10(EMIT_10);
+			StateImpl emit_20(EMIT_20);
+			StateImpl emit_50(EMIT_50);
+			StateImpl emit_other(EMIT_OTHER);
+			StateImpl return_card(RETURN_CARD);
 
 			select_option.AddTransition(&view_balance, &s1);
 			select_option.AddTransition(&withdraw_cash, &s2);
@@ -2257,7 +2160,7 @@ namespace STATE_MACHINE
 			select_option_obj.AddInputOption('1', &s1, "View Balance");
 			select_option_obj.AddInputOption('2', &s2, "Withdraw Cash");
 			select_option_obj.AddInputOption('3', &s3, "Print Statement");
-			select_option.SetStateProcessObject((StateProcessObject*)&select_option_obj);
+			select_option.SetStateProcessObject(&select_option_obj);
 			select_option.AddTimeout(5, &more_time);
 
 			more_time.AddTransition(&select_option, &s3);
@@ -2266,7 +2169,7 @@ namespace STATE_MACHINE
 			more_time_obj.AddTextLine("Would you like More Time? ");
 			more_time_obj.AddInputOption('1', &s3, "yes");
 			more_time_obj.AddInputOption('2', &s4, "no");
-			more_time.SetStateProcessObject((StateProcessObject*)&more_time_obj);
+			more_time.SetStateProcessObject(&more_time_obj);
 			more_time.AddTimeout(5, &return_card);
 
 			more_time_withdraw.AddTransition(&withdraw_cash, &s8);
@@ -2275,7 +2178,7 @@ namespace STATE_MACHINE
 			more_time_withdraw_obj.AddTextLine("Would you like More Time? ");
 			more_time_withdraw_obj.AddInputOption('1', &s8, "yes");
 			more_time_withdraw_obj.AddInputOption('2', &s9, "no");
-			more_time_withdraw.SetStateProcessObject((StateProcessObject*)&more_time_withdraw_obj);
+			more_time_withdraw.SetStateProcessObject(&more_time_withdraw_obj);
 			more_time_withdraw.AddTimeout(10, &return_card);
 
 			view_balance.AddTransition(&select_option, &s3);
@@ -2285,7 +2188,7 @@ namespace STATE_MACHINE
 			view_balance_obj.AddTextLine("Would you like another service? ");
 			view_balance_obj.AddInputOption('1', &s3, "yes");
 			view_balance_obj.AddInputOption('2', &s4, "no");
-			view_balance.SetStateProcessObject((StateProcessObject*)&view_balance_obj);
+			view_balance.SetStateProcessObject(&view_balance_obj);
 			view_balance.AddTimeout(5, &return_card);
 			//front_left.AddTimeout(5, &enter);
 
@@ -2296,14 +2199,14 @@ namespace STATE_MACHINE
 			print_statement_obj.AddTextLine("Would you like another service? ");
 			print_statement_obj.AddInputOption('1', &s3, "yes");
 			print_statement_obj.AddInputOption('2', &s4, "no");
-			print_statement.SetStateProcessObject((StateProcessObject*)&print_statement_obj);
+			print_statement.SetStateProcessObject(&print_statement_obj);
 			print_statement.AddTimeout(5, &return_card);
 
 			//front_right.AddTransition(&center_right, &s5);
 			StateProcessImpl return_card_obj;
 			return_card_obj.AddTextLine("Please take your card!");
 			return_card_obj.AddTextLine("have a great day!");
-			return_card.SetStateProcessObject((StateProcessObject*)&return_card_obj);
+			return_card.SetStateProcessObject(&return_card_obj);
 
 
 			withdraw_cash.AddTransition(&emit_10, &s3);
@@ -2318,61 +2221,47 @@ namespace STATE_MACHINE
 			withdraw_cash_obj.AddInputOption('3', &s5, "\x9C 50 ");
 			withdraw_cash_obj.AddInputOption('4', &s6, "other");
 			withdraw_cash_obj.AddInputOption('5', &s7, "return card");
-			withdraw_cash.SetStateProcessObject((StateProcessObject*)&withdraw_cash_obj);
+			withdraw_cash.SetStateProcessObject(&withdraw_cash_obj);
 			withdraw_cash.AddTimeout(5, &more_time_withdraw);
 
 			StateProcessImpl emit_10_obj;
 			emit_10_obj.AddTextLine("Machine Emits 10");
-			emit_10.SetStateProcessObject((StateProcessObject*)&emit_10_obj);
+			emit_10.SetStateProcessObject(&emit_10_obj);
 			emit_10.AddTimeout(4, &return_card);
 
 			StateProcessImpl emit_20_obj;
 			emit_20_obj.AddTextLine("Machine Emits 20");
-			emit_20.SetStateProcessObject((StateProcessObject*)&emit_20_obj);
+			emit_20.SetStateProcessObject(&emit_20_obj);
 			emit_20.AddTimeout(4, &return_card);
 
 			StateProcessImpl emit_50_obj;
 			emit_50_obj.AddTextLine("Machine Emits 50");
-			emit_50.SetStateProcessObject((StateProcessObject*)&emit_50_obj);
+			emit_50.SetStateProcessObject(&emit_50_obj);
 			emit_50.AddTimeout(4, &return_card);
 
 			StateProcessImpl emit_other_obj;
 			emit_other_obj.AddTextLine("Machine Emits other");
 			emit_other_obj.AddTextLine("todo ... ");
-			emit_other.SetStateProcessObject((StateProcessObject*)&emit_other_obj);
+			emit_other.SetStateProcessObject(&emit_other_obj);
 			emit_other.AddTimeout(4, &return_card);
-
-
-
-
 
 			StateMachine m;
 			m.SetStartState(&select_option);
 
-
-
-
-
-
-
 			//system("cls");
 			bool needPrint = true;
 			while (m.GetCurrentState() != &return_card)
-			{
-
-				//m.Process(0.1);
-				
+			{				
 				// what a mess ... 
-				State* s = m.GetCurrentState();
+				StateImpl* s = m.GetCurrentState();
 				s->GetStateProcessObject()->Process(needPrint);
 				needPrint = false;
 				if ( s->m_stopTime != 0.0 && s->GetStateProcessObject()->HasInput() )  
 				{
 					std::atomic_bool cancellation_token;
-					// Execute lambda asyncronously.
-					auto f = std::async(std::launch::async, get_input, std::ref(cancellation_token)
 
-					);
+					// Execute lambda asyncronously.
+					auto f = std::async(std::launch::async, get_input, std::ref(cancellation_token));
 
 					std::chrono::seconds sec((int)s->m_stopTime);
 					std::chrono::seconds ten_sec(10);
@@ -2380,7 +2269,6 @@ namespace STATE_MACHINE
 					//	std::chrono::time_point <std::chrono::system_clock, std::chrono::duration<int>> tp_seconds(std::chrono::duration<int>(1));
 					std::chrono::system_clock::time_point eight_seconds_passed
 						= std::chrono::system_clock::now() + std::chrono::seconds((int)s->m_stopTime);
-
 
 					std::future_status status_for = f.wait_for(sec);
 					//std::future_status status_until = f.wait_until(eight_seconds_passed);
@@ -2391,65 +2279,54 @@ namespace STATE_MACHINE
 					if (status_for == std::future_status::ready)
 					{
 						s->bActivateTimeout = false;
+						
 						char XX = f.get();
-						s->GetStateProcessObject()->SetHitKey(XX);
+						
+						
+						
 						if (s->GetStateProcessObject()->HasInput())
 						{
-							InputProcessor * ip = s->GetStateProcessObject()->GetInputProcessor();
+							InputProcessor * ip = (InputProcessor*)s->GetStateProcessObject()->GetInputProcessor();
+							
 							bool foundInput = false;
+
 							for (char a : ip->user_inputs)
 							{
 								if (a == XX)
 								{
-									m.m_current_State = m.m_current_State->Activate(ip->m_input_signal_map[a]);
+									m.m_current_State = (StateImpl*) m.m_current_State->Activate(ip->m_input_signal_map[a]);
 									m.m_next_State = m.m_current_State;
+									
 									foundInput = true;
 									needPrint = true;
+
 									std::cin.clear();
 									std::cin.ignore(INT_MAX, '\n');
+									
 									break;
 								}
 							}
-
-							/*if (foundInput == false)
-							{
-								s->OnActivate();
-							}*/
 						}
 						else
 						{
-							s->GetStateProcessObject()->SetHitKey(0);
-							m.m_current_State = s->Activate(s->timeout);
-							needPrint = true;
-							/*istringstream iss("\0");
-							streambuf *backup;
-							backup = cin.rdbuf();
-							cin.rdbuf(iss.rdbuf());
-							cin.rdbuf(backup);*/
-							cin.clear();
 							
+							m.m_current_State = (StateImpl*) s->Activate(s->timeout);
+							needPrint = true;	
 						}
-						//std::cout << "still waiting..." << std::endl;
-						//cancellation_token = true;
-
 					}
 					else if (status_for == std::future_status::timeout || status_for == std::future_status::deferred)
 					{
-						//s->bActivateTimeout = true;
-						s->GetStateProcessObject()->SetHitKey(0);
-						m.m_current_State = s->Activate(s->timeout);
-						needPrint = true;
-						cancellation_token = true;
 						//char XX = f.get();
 						
+						m.m_current_State = (StateImpl*) s->Activate(s->timeout);
+						needPrint = true;
+						cancellation_token = true;						
 					}
 					else
 					{
 						needPrint = true;
 					}
-					
-					
-				//	std::cout << "Input was: " << f.get() << std::endl;
+			
 				}
 				else
 				{
@@ -2457,11 +2334,8 @@ namespace STATE_MACHINE
 					std::chrono::system_clock::time_point eight_seconds_passed
 						= std::chrono::system_clock::now() + std::chrono::seconds((int)s->m_stopTime);
 
-
-					
-
 					auto f = std::async(std::launch::async, [] {
-						cout << "done" << endl;
+						if(_kbhit()) cout << "\n";
 					});
 
 					//std::future_status status_for = f.wait_for(sec);
@@ -2469,21 +2343,19 @@ namespace STATE_MACHINE
 
 					if (status_until == std::future_status::ready)
 					{
-						s->GetStateProcessObject()->SetHitKey(0);
-						m.m_current_State = s->Activate(s->timeout);
+						
+						m.m_current_State = (StateImpl*) s->Activate(s->timeout);
 					}
 					else
 					{
-						s->GetStateProcessObject()->SetHitKey(0);
-						m.m_current_State = s->Activate(s->timeout);
+						
+						m.m_current_State = (StateImpl*) s->Activate(s->timeout);
 					}
 					needPrint = true;
 				}
-			//	m.Process(0.1);
-
 			}
 			
-			m.Process(0.1);
+			m.Process();
 
 		}
 	};
@@ -2502,8 +2374,7 @@ string reverse_string(const string& s)
 }*/
 
 
-#include <thread>
-#include <future>
+
 
 
 
@@ -2517,7 +2388,7 @@ int main(int argc, char** argv)
 	cout << "NOTE: IF YOU RUN OUT OF TIME YOU NEED TO INPUT THE ANSWER TWICE AND HIT ENTER EACH TIME " << endl;
 	cout << "=============================================================================" << endl << endl;
 	STATE_MACHINE::VECTOR_STATE_MACHINE_2::RunTest3();
-	system("cls");
+	
 
 //	STATE_MACHINE::LINKED_STATE_MACHINE::RunTest();
 	cout << "=============================================================================" << endl;
@@ -2527,7 +2398,7 @@ int main(int argc, char** argv)
 	
 	
 		std::this_thread::sleep_for(std::chrono::seconds(2));
-
+		system("cls");
 		
 
 	
